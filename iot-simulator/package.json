@@ -1,0 +1,10 @@
+{
+  "name": "iot-simulator",
+  "version": "1.0.0",
+  "main": "simulator.js",
+  "scripts": { "start": "node simulator.js --scenario temp-exceed" },
+  "dependencies": {
+    "mqtt": "^5.3.4",
+    "commander": "^12.0.0"
+  }
+}

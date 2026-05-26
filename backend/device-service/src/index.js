@@ -1,0 +1,195 @@
+require('dotenv').config();
+const express = require('express');
+const cors    = require('cors');
+const helmet  = require('helmet');
+const morgan  = require('morgan');
+const jwt     = require('jsonwebtoken');
+const mqtt    = require('mqtt');
+const amqp    = require('amqplib');
+const { Sequelize, DataTypes } = require('sequelize');
+
+const app  = express();
+const PORT = process.env.PORT || 3002;
+const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret';
+const EXCHANGE   = 'smart_office_events';
+
+app.use(helmet()); app.use(cors()); app.use(morgan('tiny')); app.use(express.json());
+
+// ── Database ────────────────────────────────────────────────
+const sequelize = new Sequelize(process.env.DB_URL || 'postgresql://souser:sopassword@localhost:5432/so_devices', {
+  dialect: 'postgres', logging: false,
+});
+
+const DeviceGroup = sequelize.define('DeviceGroup', {
+  id:   { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
+  name: { type: DataTypes.STRING, allowNull: false },
+  floor: DataTypes.INTEGER,
+  zone:  DataTypes.STRING,
+}, { tableName: 'device_groups' });
+
+const Device = sequelize.define('Device', {
+  id:          { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
+  name:        { type: DataTypes.STRING, allowNull: false },
+  type:        { type: DataTypes.ENUM('light','ac','camera','door','sensor'), allowNull: false },
+  room:        DataTypes.STRING,
+  floor:       { type: DataTypes.INTEGER, defaultValue: 1 },
+  status:      { type: DataTypes.BOOLEAN, defaultValue: false },
+  ip_address:  DataTypes.STRING,
+  mqtt_topic:  DataTypes.STRING,
+  settings:    { type: DataTypes.JSONB, defaultValue: {} },
+  last_seen:   DataTypes.DATE,
+  group_id:    DataTypes.UUID,
+}, { tableName: 'devices' });
+
+const CommandLog = sequelize.define('CommandLog', {
+  id:        { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
+  device_id: DataTypes.UUID,
+  user_id:   DataTypes.UUID,
+  command:   DataTypes.STRING,
+  payload:   DataTypes.JSONB,
+  source:    { type: DataTypes.STRING, defaultValue: 'user' },
+  result:    { type: DataTypes.STRING, defaultValue: 'success' },
+}, { tableName: 'command_logs' });
+
+DeviceGroup.hasMany(Device, { foreignKey: 'group_id' });
+Device.belongsTo(DeviceGroup, { foreignKey: 'group_id' });
+
+// ── MQTT ────────────────────────────────────────────────────
+let mqttClient;
+function connectMqtt() {
+  const host = process.env.MQTT_HOST || 'localhost';
+  const port = process.env.MQTT_PORT || 1883;
+  mqttClient = mqtt.connect(`mqtt://${host}:${port}`, { clientId: `device-service-${Date.now()}`, reconnectPeriod: 3000 });
+  mqttClient.on('connect', () => console.log('[device-service] MQTT connected'));
+  mqttClient.on('error',   e  => console.error('[device-service] MQTT error:', e.message));
+}
+
+function publishMqtt(topic, payload) {
+  if (mqttClient?.connected) mqttClient.publish(topic, JSON.stringify(payload), { qos: 1 });
+}
+
+// ── RabbitMQ ────────────────────────────────────────────────
+let rabbitChannel;
+async function connectRabbit() {
+  const conn = await amqp.connect(process.env.RABBITMQ_URL || 'amqp://localhost');
+  rabbitChannel = await conn.createChannel();
+  await rabbitChannel.assertExchange(EXCHANGE, 'topic', { durable: true });
+  console.log('[device-service] RabbitMQ connected');
+}
+function publishEvent(key, payload) {
+  if (rabbitChannel) rabbitChannel.publish(EXCHANGE, key, Buffer.from(JSON.stringify({ ...payload, ts: new Date() })), { persistent: true });
+}
+
+// ── Auth middleware ─────────────────────────────────────────
+function auth(req, res, next) {
+  if (req.headers['x-internal-service']) return next();
+  const h = req.headers.authorization;
+  if (!h?.startsWith('Bearer ')) return res.status(401).json({ error: 'Unauthorized' });
+  try { req.user = jwt.verify(h.slice(7), JWT_SECRET); next(); }
+  catch { res.status(401).json({ error: 'Invalid token' }); }
+}
+
+// ── Routes ──────────────────────────────────────────────────
+// GET /api/devices
+app.get('/api/devices', auth, async (req, res) => {
+  try {
+    const devices = await Device.findAll({ include: [DeviceGroup], order: [['floor','ASC'],['room','ASC']] });
+    res.json(devices);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/devices/:id
+app.get('/api/devices/:id', auth, async (req, res) => {
+  try {
+    const d = await Device.findByPk(req.params.id, { include: [DeviceGroup] });
+    if (!d) return res.status(404).json({ error: 'Không tìm thấy thiết bị' });
+    res.json(d);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/devices
+app.post('/api/devices', auth, async (req, res) => {
+  try {
+    const d = await Device.create(req.body);
+    publishEvent('device.created', { device_id: d.id, name: d.name });
+    res.status(201).json(d);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PUT /api/devices/:id
+app.put('/api/devices/:id', auth, async (req, res) => {
+  try {
+    const d = await Device.findByPk(req.params.id);
+    if (!d) return res.status(404).json({ error: 'Không tìm thấy thiết bị' });
+    await d.update(req.body);
+    publishEvent('device.updated', { device_id: d.id });
+    res.json(d);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// DELETE /api/devices/:id
+app.delete('/api/devices/:id', auth, async (req, res) => {
+  try {
+    const d = await Device.findByPk(req.params.id);
+    if (!d) return res.status(404).json({ error: 'Không tìm thấy thiết bị' });
+    await d.destroy();
+    publishEvent('device.deleted', { device_id: req.params.id });
+    res.json({ message: 'Đã xóa thiết bị' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/devices/:id/control  — Câu 3: Step 5-6
+app.post('/api/devices/:id/control', auth, async (req, res) => {
+  try {
+    const d = await Device.findByPk(req.params.id);
+    if (!d) return res.status(404).json({ error: 'Không tìm thấy thiết bị' });
+    const { command, ...params } = req.body;
+    const topic = d.mqtt_topic || `office/${d.floor}/${d.room}/${d.type}/command`;
+    publishMqtt(topic, { device_id: d.id, command, ...params, ts: new Date() });
+    if (command === 'ON')  await d.update({ status: true,  last_seen: new Date() });
+    if (command === 'OFF') await d.update({ status: false, last_seen: new Date() });
+    await CommandLog.create({ device_id: d.id, user_id: req.user?.sub, command, payload: params, source: req.headers['x-internal-service'] ? 'automation' : 'user' });
+    publishEvent('device.controlled', { device_id: d.id, command, source: 'device-service' });
+    res.json({ success: true, device_id: d.id, command, status: d.status });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/devices/logs
+app.get('/api/devices/logs', auth, async (req, res) => {
+  try {
+    const logs = await CommandLog.findAll({ order: [['createdAt','DESC']], limit: 100 });
+    res.json(logs);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/health', (req, res) => res.json({ status: 'ok', service: 'device-service' }));
+
+// ── Seed sample devices ─────────────────────────────────────
+async function seed() {
+  const [g1] = await DeviceGroup.findOrCreate({ where: { name: 'Tầng 3' }, defaults: { floor: 3, zone: 'office' } });
+  const [g2] = await DeviceGroup.findOrCreate({ where: { name: 'Sảnh'   }, defaults: { floor: 1, zone: 'entrance' } });
+  const list = [
+    { name: 'Đèn phòng 301',  type: 'light',  room: 'room301', floor: 3, status: false, mqtt_topic: 'office/3/room301/light/cmd',  group_id: g1.id },
+    { name: 'Đèn phòng 302',  type: 'light',  room: 'room302', floor: 3, status: false, mqtt_topic: 'office/3/room302/light/cmd',  group_id: g1.id },
+    { name: 'Điều hòa 301',   type: 'ac',     room: 'room301', floor: 3, status: false, mqtt_topic: 'office/3/room301/ac/cmd',     group_id: g1.id, settings: { target_temp: 24 } },
+    { name: 'Điều hòa 302',   type: 'ac',     room: 'room302', floor: 3, status: false, mqtt_topic: 'office/3/room302/ac/cmd',     group_id: g1.id, settings: { target_temp: 24 } },
+    { name: 'Camera sảnh',    type: 'camera', room: 'lobby',   floor: 1, status: true,  mqtt_topic: 'office/1/lobby/camera/cmd',  group_id: g2.id },
+    { name: 'Cửa chính',      type: 'door',   room: 'entrance',floor: 1, status: false, mqtt_topic: 'office/1/entrance/door/cmd', group_id: g2.id },
+    { name: 'Cảm biến nhiệt 301', type: 'sensor', room: 'room301', floor: 3, status: true, mqtt_topic: 'office/3/room301/temperature', group_id: g1.id },
+  ];
+  for (const item of list) await Device.findOrCreate({ where: { name: item.name }, defaults: item });
+  console.log('[device-service] Seed done');
+}
+
+async function start() {
+  await sequelize.sync({ alter: true });
+  await seed();
+  connectMqtt();
+  // Wait for RabbitMQ with retries
+  for (let i = 0; i < 10; i++) {
+    try { await connectRabbit(); break; }
+    catch { console.log(`[device-service] RabbitMQ retry ${i+1}/10`); await new Promise(r => setTimeout(r, 3000)); }
+  }
+  app.listen(PORT, () => console.log(`[device-service] port ${PORT}`));
+}
+start().catch(console.error);

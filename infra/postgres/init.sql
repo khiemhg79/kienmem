@@ -1,0 +1,6 @@
+CREATE DATABASE so_auth;
+CREATE DATABASE so_devices;
+CREATE DATABASE so_notifications;
+GRANT ALL PRIVILEGES ON DATABASE so_auth TO souser;
+GRANT ALL PRIVILEGES ON DATABASE so_devices TO souser;
+GRANT ALL PRIVILEGES ON DATABASE so_notifications TO souser;

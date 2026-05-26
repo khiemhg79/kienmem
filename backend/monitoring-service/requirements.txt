@@ -1,0 +1,5 @@
+paho-mqtt==2.0.0
+influxdb-client==1.41.0
+aio-pika==9.4.1
+aiohttp==3.9.3
+python-dotenv==1.0.1

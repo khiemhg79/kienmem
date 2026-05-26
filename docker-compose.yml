@@ -1,0 +1,199 @@
+version: '3.9'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: so_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: souser
+      POSTGRES_PASSWORD: sopassword
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports: ["5433:5432"]
+    networks: [so_net]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U souser"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  influxdb:
+    image: influxdb:2.7-alpine
+    container_name: so_influxdb
+    restart: unless-stopped
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: admin
+      DOCKER_INFLUXDB_INIT_PASSWORD: influxpassword
+      DOCKER_INFLUXDB_INIT_ORG: smart-office
+      DOCKER_INFLUXDB_INIT_BUCKET: sensor_data
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: so-influx-token-2025
+    volumes: [influx_data:/var/lib/influxdb2]
+    ports: ["8086:8086"]
+    networks: [so_net]
+
+  redis:
+    image: redis:7-alpine
+    container_name: so_redis
+    restart: unless-stopped
+    command: redis-server --requirepass redispassword
+    ports: ["6379:6379"]
+    networks: [so_net]
+
+  rabbitmq:
+    image: rabbitmq:3.12-management-alpine
+    container_name: so_rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: souser
+      RABBITMQ_DEFAULT_PASS: sopassword
+    ports: ["5672:5672", "15672:15672"]
+    networks: [so_net]
+
+  # Mosquitto expose ra 0.0.0.0 để điện thoại kết nối được qua WiFi LAN
+  mosquitto:
+    image: eclipse-mosquitto:2.0
+    container_name: so_mosquitto
+    restart: unless-stopped
+    volumes:
+      - ./infra/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf
+    ports:
+      - "0.0.0.0:1883:1883"
+    networks: [so_net]
+
+  auth-service:
+    build: ./backend/auth-service
+    container_name: so_auth
+    restart: unless-stopped
+    environment:
+      PORT: 3001
+      DB_URL: postgresql://souser:sopassword@postgres:5432/so_auth
+      REDIS_URL: redis://:redispassword@redis:6379
+      JWT_SECRET: smart-office-jwt-secret-2025
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks: [so_net]
+
+  device-service:
+    build: ./backend/device-service
+    container_name: so_device
+    restart: unless-stopped
+    environment:
+      PORT: 3002
+      DB_URL: postgresql://souser:sopassword@postgres:5432/so_devices
+      MQTT_HOST: mosquitto
+      MQTT_PORT: 1883
+      RABBITMQ_URL: amqp://souser:sopassword@rabbitmq:5672
+      JWT_SECRET: smart-office-jwt-secret-2025
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mosquitto:
+        condition: service_started
+      rabbitmq:
+        condition: service_started
+    networks: [so_net]
+
+  automation-service:
+    build: ./backend/automation-service
+    container_name: so_automation
+    restart: unless-stopped
+    environment:
+      PORT: 3003
+      DB_URL: postgresql://souser:sopassword@postgres:5432/so_devices
+      RABBITMQ_URL: amqp://souser:sopassword@rabbitmq:5672
+      DEVICE_SERVICE_URL: http://device-service:3002
+      NOTIFICATION_SERVICE_URL: http://notification-service:3005
+      JWT_SECRET: smart-office-jwt-secret-2025
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_started
+      device-service:
+        condition: service_started
+    networks: [so_net]
+
+  monitoring-service:
+    build: ./backend/monitoring-service
+    container_name: so_monitoring
+    restart: unless-stopped
+    environment:
+      PORT: 3004
+      MQTT_HOST: mosquitto
+      MQTT_PORT: 1883
+      INFLUXDB_URL: http://influxdb:8086
+      INFLUXDB_TOKEN: so-influx-token-2025
+      INFLUXDB_ORG: smart-office
+      INFLUXDB_BUCKET: sensor_data
+      RABBITMQ_URL: amqp://souser:sopassword@rabbitmq:5672
+      ALERT_THRESHOLD_TEMP: 29
+    depends_on: [influxdb, mosquitto, rabbitmq]
+    networks: [so_net]
+
+  notification-service:
+    build: ./backend/notification-service
+    container_name: so_notification
+    restart: unless-stopped
+    environment:
+      PORT: 3005
+      DB_URL: postgresql://souser:sopassword@postgres:5432/so_notifications
+      RABBITMQ_URL: amqp://souser:sopassword@rabbitmq:5672
+      JWT_SECRET: smart-office-jwt-secret-2025
+      GMAIL_USER: "khiemhg0709@gmail.com"
+      GMAIL_APP_PASSWORD: "keyh vnyy zvbg avut"
+      NOTIFY_EMAIL: "26a4040720@hvnh.edu.vn"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_started
+    networks: [so_net]
+
+  api-gateway:
+    build: ./backend/api-gateway
+    container_name: so_gateway
+    restart: unless-stopped
+    ports: ["9000:3000"]
+    environment:
+      PORT: 3000
+      JWT_SECRET: smart-office-jwt-secret-2025
+      AUTH_URL: http://auth-service:3001
+      DEVICE_URL: http://device-service:3002
+      AUTOMATION_URL: http://automation-service:3003
+      MONITORING_URL: http://monitoring-service:3004
+      NOTIFICATION_URL: http://notification-service:3005
+    depends_on: [auth-service, device-service, automation-service, monitoring-service, notification-service]
+    networks: [so_net]
+
+  frontend:
+    build: ./frontend
+    container_name: so_frontend
+    restart: unless-stopped
+    ports: ["5173:80"]
+    depends_on: [api-gateway]
+    networks: [so_net]
+
+  # IoT Simulator tự động chạy kịch bản nhiệt độ khi khởi động
+  iot-simulator:
+    build: ./iot-simulator
+    container_name: so_simulator
+    restart: no
+    environment:
+      MQTT_HOST: mosquitto
+      MQTT_PORT: "1883"
+    depends_on: [mosquitto, monitoring-service]
+    networks: [so_net]
+
+volumes:
+  postgres_data:
+  influx_data:
+
+networks:
+  so_net:
+    driver: bridge
