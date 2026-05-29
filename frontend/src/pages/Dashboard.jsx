@@ -44,6 +44,9 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true)
   const [lastUpdate, setLastUpdate] = useState(null)
   const [dataSource, setDataSource] = useState('mock')
+  
+  const user = JSON.parse(localStorage.getItem('user') || '{}')
+  const canEditSim = ['admin', 'manager'].includes(user.role)
 
   const fetchAll = useCallback(async () => {
     try {
@@ -149,13 +152,15 @@ export default function Dashboard() {
           <div className="flex items-center justify-between mb-3">
             <span className="text-sm text-gray-500">Nhiệt độ phòng 301</span>
             <div className="flex items-center gap-1.5">
-              <button 
-                onClick={() => setShowSimConfig(!showSimConfig)}
-                className={`p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors ${showSimConfig ? 'bg-gray-100 text-gray-600' : ''}`}
-                title="Cấu hình mô phỏng"
-              >
-                <Settings className="w-4 h-4" />
-              </button>
+              {canEditSim && (
+                <button 
+                  onClick={() => setShowSimConfig(!showSimConfig)}
+                  className={`p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors ${showSimConfig ? 'bg-gray-100 text-gray-600' : ''}`}
+                  title="Cấu hình mô phỏng"
+                >
+                  <Settings className="w-4 h-4" />
+                </button>
+              )}
               <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${isHot ? 'bg-red-500' : 'bg-green-600'}`}>
                 <Thermometer className="w-5 h-5 text-white" />
               </div>
@@ -295,7 +300,7 @@ export default function Dashboard() {
                     </div>
                   </div>
                   <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${d.status ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
-                    {d.status ? 'BẬT' : 'TẮT'}
+                    {d.type === 'door' ? (d.status ? 'MỞ' : 'ĐÓNG') : (d.status ? 'BẬT' : 'TẮT')}
                   </span>
                 </div>
               ))}

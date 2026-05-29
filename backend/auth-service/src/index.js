@@ -36,6 +36,7 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
     const payload = {
       sub: user.id, email: user.email,
       role: user.Role.name, permissions: user.Role.permissions,
+      assigned_room: user.assigned_room
     };
     const accessToken  = jwt.sign(payload, JWT_SECRET, { expiresIn: '15m' });
     const refreshToken = jwt.sign({ sub: user.id }, JWT_SECRET, { expiresIn: '7d' });
@@ -43,7 +44,7 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
     await RefreshToken.create({ user_id: user.id, token_hash: hash, expires_at: new Date(Date.now() + 7*24*3600*1000) });
     await user.update({ last_login: new Date() });
 
-    res.json({ accessToken, refreshToken, user: { id: user.id, name: user.name, email: user.email, role: user.Role.name } });
+    res.json({ accessToken, refreshToken, user: { id: user.id, name: user.name, email: user.email, role: user.Role.name, assigned_room: user.assigned_room } });
   } catch (e) { console.error(e); res.status(500).json({ error: e.message }); }
 });
 
@@ -58,7 +59,7 @@ app.post('/api/auth/refresh', async (req, res) => {
     if (!matched) return res.status(401).json({ error: 'Invalid refresh token' });
     await matched.update({ revoked: true });
     const user = await User.findByPk(p.sub, { include: [Role] });
-    const payload = { sub: user.id, email: user.email, role: user.Role.name, permissions: user.Role.permissions };
+    const payload = { sub: user.id, email: user.email, role: user.Role.name, permissions: user.Role.permissions, assigned_room: user.assigned_room };
     const newAccess  = jwt.sign(payload, JWT_SECRET, { expiresIn: '15m' });
     const newRefresh = jwt.sign({ sub: user.id }, JWT_SECRET, { expiresIn: '7d' });
     res.json({ accessToken: newAccess, refreshToken: newRefresh });
@@ -118,7 +119,7 @@ app.get('/health', (req, res) => res.json({ status: 'ok', service: 'auth-service
 
 // ── Start ───────────────────────────────────────────────────
 async function start() {
-  await sequelize.sync({ force: false });
+  await sequelize.sync({ alter: true });
   await seed();
   app.listen(PORT, () => console.log(`[auth-service] port ${PORT}`));
 }
@@ -133,11 +134,40 @@ async function seed() {
   for (const r of roles) await Role.findOrCreate({ where: { name: r.name }, defaults: r });
   const adminRole = await Role.findOne({ where: { name: 'admin' } });
   const hash = await bcrypt.hash('Admin@123', 12);
-  await User.findOrCreate({
+  const [admin] = await User.findOrCreate({
     where: { email: 'admin@smartoffice.vn' },
     defaults: { name: 'System Admin', email: 'admin@smartoffice.vn', password_hash: hash, role_id: adminRole.id },
   });
-  console.log('[auth-service] Seed done — admin@smartoffice.vn / Admin@123');
+  await admin.update({ name: 'System Admin', role_id: adminRole.id });
+  
+  const managerRole = await Role.findOne({ where: { name: 'manager' } });
+  const [manager] = await User.findOrCreate({
+    where: { email: 'manager@smartoffice.vn' },
+    defaults: { name: 'Office Manager', email: 'manager@smartoffice.vn', password_hash: hash, role_id: managerRole.id },
+  });
+  await manager.update({ name: 'Office Manager', role_id: managerRole.id });
+
+  const staffRole = await Role.findOne({ where: { name: 'staff' } });
+  const [staff301] = await User.findOrCreate({
+    where: { email: 'staff@smartoffice.vn' },
+    defaults: { name: 'Office Staff (Room 301)', email: 'staff@smartoffice.vn', password_hash: hash, role_id: staffRole.id, assigned_room: 'room301' },
+  });
+  await staff301.update({ name: 'Office Staff (Room 301)', assigned_room: 'room301', role_id: staffRole.id });
+
+  const [staff101] = await User.findOrCreate({
+    where: { email: 'staff101@smartoffice.vn' },
+    defaults: { name: 'Office Staff (Room 101)', email: 'staff101@smartoffice.vn', password_hash: hash, role_id: staffRole.id, assigned_room: 'room101' },
+  });
+  await staff101.update({ name: 'Office Staff (Room 101)', assigned_room: 'room101', role_id: staffRole.id });
+
+  const guestRole = await Role.findOne({ where: { name: 'guest' } });
+  const [guest] = await User.findOrCreate({
+    where: { email: 'guest@smartoffice.vn' },
+    defaults: { name: 'Guest User', email: 'guest@smartoffice.vn', password_hash: hash, role_id: guestRole.id },
+  });
+  await guest.update({ name: 'Guest User', role_id: guestRole.id });
+
+  console.log('[auth-service] Seed done — 4 accounts created with password Admin@123');
 }
 
 start().catch(console.error);

@@ -11,6 +11,10 @@ const INIT = { name:'', type:'light', room:'', floor:1, ip_address:'', mqtt_topi
 
 export default function Devices() {
   const { devices, loading, toggling, toggleDevice, refreshDevices } = useDeviceStore()
+  const user = JSON.parse(localStorage.getItem('user') || '{}')
+  const canControl = ['admin', 'manager', 'staff'].includes(user.role)
+  const canEdit    = ['admin', 'manager'].includes(user.role)
+  const canDelete  = user.role === 'admin'
 
   const [modal,     setModal]     = useState(false)
   const [form,      setForm]      = useState(INIT)
@@ -140,9 +144,11 @@ export default function Devices() {
           <button onClick={refreshDevices} className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors">
             <RefreshCw className="w-4 h-4 text-gray-500" />
           </button>
-          <button onClick={openCreate} className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors">
-            <Plus className="w-4 h-4" /> Thêm thiết bị
-          </button>
+          {canEdit && (
+            <button onClick={openCreate} className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors">
+              <Plus className="w-4 h-4" /> Thêm thiết bị
+            </button>
+          )}
         </div>
       </div>
 
@@ -155,7 +161,12 @@ export default function Devices() {
         <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-blue-600" /></div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {filtered.map(d => (
+          {filtered.map(d => {
+            const isStaff = user.role === 'staff';
+            const staffCanControl = !isStaff || (isStaff && user.assigned_room && user.assigned_room.toLowerCase() === (d.room || '').toLowerCase());
+            const deviceCanControl = canControl && staffCanControl;
+
+            return (
             <div key={d.id} className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
               <div className="flex items-start justify-between mb-3">
                 <div className="flex items-center gap-3">
@@ -166,47 +177,57 @@ export default function Devices() {
                   </div>
                 </div>
                 <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${d.status ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
-                  {d.status ? 'BẬT' : 'TẮT'}
+                  {d.type === 'door' ? (d.status ? 'MỞ' : 'ĐÓNG') : (d.status ? 'BẬT' : 'TẮT')}
                 </span>
               </div>
 
               {d.ip_address && <p className="text-xs text-gray-400 mb-3">IP: {d.ip_address}</p>}
 
-              <div className="flex gap-2 pt-3 border-t border-gray-100">
-                {d.type === 'camera' ? (
-                  <button
-                    onClick={() => openAiConfig(d)}
-                    className="flex-1 flex items-center justify-center gap-1.5 text-xs py-1.5 rounded-lg font-medium transition-colors bg-purple-50 text-purple-700 hover:bg-purple-100"
-                  >
-                    <Settings className="w-3.5 h-3.5" />
-                    Cài đặt AI
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => toggleDevice(d)}
-                    disabled={toggling === d.id}
-                    className={`flex-1 flex items-center justify-center gap-1.5 text-xs py-1.5 rounded-lg font-medium transition-colors disabled:opacity-60
-                      ${d.status ? 'bg-gray-100 text-gray-700 hover:bg-gray-200' : 'bg-green-100 text-green-700 hover:bg-green-200'}`}
-                  >
-                    {toggling === d.id ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    ) : (
-                      <Power className="w-3.5 h-3.5" />
-                    )}
-                    {d.status ? 'Tắt' : 'Bật'}
-                  </button>
-                )}
-                <button onClick={() => openEdit(d)}
-                  className="flex-1 flex items-center justify-center gap-1.5 text-xs py-1.5 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 font-medium transition-colors">
-                  <Pencil className="w-3.5 h-3.5" /> Sửa
-                </button>
-                <button onClick={() => handleDelete(d.id)}
-                  className="flex items-center justify-center px-3 py-1.5 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 transition-colors">
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
-              </div>
+              {(d.type === 'camera' && canEdit) || (d.type !== 'camera' && d.type !== 'sensor' && deviceCanControl) || canEdit || canDelete ? (
+                <div className="flex gap-2 pt-3 border-t border-gray-100">
+                  {d.type === 'camera' ? (
+                    canEdit && (
+                      <button
+                        onClick={() => openAiConfig(d)}
+                        className="flex-1 flex items-center justify-center gap-1.5 text-xs py-1.5 rounded-lg font-medium transition-colors bg-purple-50 text-purple-700 hover:bg-purple-100"
+                      >
+                        <Settings className="w-3.5 h-3.5" />
+                        Cài đặt AI
+                      </button>
+                    )
+                  ) : d.type !== 'sensor' ? (
+                    deviceCanControl && (
+                      <button
+                        onClick={() => toggleDevice(d)}
+                        disabled={toggling === d.id}
+                        className={`flex-1 flex items-center justify-center gap-1.5 text-xs py-1.5 rounded-lg font-medium transition-colors disabled:opacity-60
+                          ${d.status ? 'bg-gray-100 text-gray-700 hover:bg-gray-200' : 'bg-green-100 text-green-700 hover:bg-green-200'}`}
+                      >
+                        {toggling === d.id ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <Power className="w-3.5 h-3.5" />
+                        )}
+                        {d.type === 'door' ? (d.status ? 'Đóng' : 'Mở') : (d.status ? 'Tắt' : 'Bật')}
+                      </button>
+                    )
+                  ) : null}
+                  {canEdit && (
+                    <button onClick={() => openEdit(d)}
+                      className="flex-1 flex items-center justify-center gap-1.5 text-xs py-1.5 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 font-medium transition-colors">
+                      <Pencil className="w-3.5 h-3.5" /> Sửa
+                    </button>
+                  )}
+                  {canDelete && (
+                    <button onClick={() => handleDelete(d.id)}
+                      className="flex items-center justify-center px-3 py-1.5 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 transition-colors">
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              ) : null}
             </div>
-          ))}
+          )})}
         </div>
       )}
 

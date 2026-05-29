@@ -202,8 +202,9 @@ async def latest(req):
     flux = f'''
 from(bucket: "{INFLUX_BKT}")
   |> range(start: -1h)
-  |> filter(fn: (r) => r._measurement == "sensor_readings")
+  |> filter(fn: (r) => r._measurement == "sensor_readings" and r._field == "value")
   {room_filter}
+  |> group(columns: ["sensor_type", "room"])
   |> last()
 '''
     try:

@@ -19,6 +19,7 @@ const User = sequelize.define('User', {
   email:         { type: DataTypes.STRING, allowNull: false, unique: true },
   password_hash: { type: DataTypes.STRING, allowNull: false },
   role_id:       { type: DataTypes.UUID },
+  assigned_room: { type: DataTypes.STRING, allowNull: true },
   is_active:     { type: DataTypes.BOOLEAN, defaultValue: true },
   last_login:    { type: DataTypes.DATE },
 }, { tableName: 'users' });
