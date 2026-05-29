@@ -21,9 +21,12 @@ docker-compose up --build
 # - InfluxDB UI:    http://localhost:8086   (admin/influxpassword)
 ```
 
-### Tài khoản mặc định
-- Email: `admin@smartoffice.vn`
-- Mật khẩu: `Admin@123`
+### Tài khoản mặc định (Mật khẩu chung: `Admin@123`)
+- **Admin** (Toàn quyền): `admin@smartoffice.vn`
+- **Giám đốc** (Quản lý Tầng 1): `director@smartoffice.vn`
+- **Trưởng phòng** (Quản lý Phòng Marketing): `manager@smartoffice.vn`
+- **Nhân viên** (Phòng 301): `staff@smartoffice.vn`
+- **Khách**: `guest@smartoffice.vn`
 
 ### Chạy IoT Simulator (kịch bản nhiệt độ > 29°C)
 
