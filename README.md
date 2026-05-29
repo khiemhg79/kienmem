@@ -11,8 +11,9 @@
 # 1. Clone / giải nén project
 cd smart-office-final
 
-# 2. Chạy tất cả services
-docker-compose up --build
+# 2. Khởi tạo / Chạy tất cả services
+# (Nếu bạn đã từng chạy code cũ, hãy chạy `docker-compose down -v` trước để xóa db cũ và nạp sơ đồ 3D mới nhất)
+docker-compose up -d --build
 
 # Lần đầu build ~5 phút. Sau đó:
 # - Frontend:       http://localhost:5173
