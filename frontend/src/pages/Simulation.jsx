@@ -213,7 +213,7 @@ function DeviceNode({ device, index, floor, onToggle, isEditingLayout, onPositio
       >
         <div className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white whitespace-nowrap shadow-xl">
           <div className="font-semibold">{device.name}</div>
-          <div className="text-slate-400">{cfg.label} · Tầng {device.floor} · {!device.room || device.room === 'none' ? 'Chưa phân phòng' : device.room}</div>
+          <div className="text-slate-400">{cfg.label} · Tầng {device.floor} · {!device.room || device.room === 'none' ? `Sảnh tầng ${device.floor}` : device.room}</div>
           <div className={`mt-1 font-medium ${isOn ? 'text-green-400' : 'text-slate-500'}`}>
             {isOn ? '● Đang bật' : '○ Đang tắt'}
           </div>
@@ -902,7 +902,7 @@ export default function Simulation() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-slate-200 truncate">{d.name}</p>
-                    <p className="text-xs text-slate-500">{!d.room || d.room === 'none' ? 'Chưa phân phòng' : d.room}</p>
+                    <p className="text-xs text-slate-500">{!d.room || d.room === 'none' ? `Sảnh tầng ${d.floor}` : d.room}</p>
                   </div>
                   <div className="flex flex-col items-end gap-1 flex-shrink-0">
                     <div

@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import paho.mqtt.client as mqtt
+import time
 from influxdb_client import InfluxDBClient, Point
 from influxdb_client.client.write_api import SYNCHRONOUS
 import aio_pika
@@ -61,6 +62,8 @@ async def publish_alert(routing_key: str, payload: dict):
     log.info(f'Published {routing_key}: {payload.get("message", "")}')
 
 # ── MQTT message handler ─────────────────────────────────────
+last_alert_time = {}
+
 def on_mqtt_message(client, userdata, msg):
     """
     Step 2: Nhận dữ liệu từ cảm biến IoT
@@ -110,26 +113,43 @@ def on_mqtt_message(client, userdata, msg):
         )
         write_api.write(bucket=INFLUX_BKT, record=point)
         log.info(f'InfluxDB ← {sensor_type}={value}{unit} [{room}]')
+        # Publish sensor data for automation rules
+        data_event = {
+            'device_id':   device_id,
+            'sensor_type': sensor_type,
+            'value':       value,
+            'room':        room,
+            'floor':       floor,
+            'unit':        unit,
+            'service':     'monitoring-service',
+        }
+        if main_loop and main_loop.is_running():
+            asyncio.run_coroutine_threadsafe(
+                publish_alert('sensor.data', data_event), main_loop
+            )
 
         # Step 4: Check threshold → publish sensor.alert
         thresholds = {'temperature': ALERT_TEMP}
         threshold  = thresholds.get(sensor_type)
         if threshold and value > threshold:
-            alert = {
-                'device_id':   device_id,
-                'sensor_type': sensor_type,
-                'value':       value,
-                'threshold':   threshold,
-                'room':        room,
-                'floor':       floor,
-                'unit':        unit,
-                'message':     f'Cảnh báo: {sensor_type}={value}{unit} vượt ngưỡng {threshold}°C tại {room}',
-                'service':     'monitoring-service',
-            }
-            if main_loop and main_loop.is_running():
-                asyncio.run_coroutine_threadsafe(
-                    publish_alert('sensor.alert', alert), main_loop
-                )
+            now = time.time()
+            if now - last_alert_time.get(device_id, 0) > 60: # Cooldown 60s
+                last_alert_time[device_id] = now
+                alert = {
+                    'device_id':   device_id,
+                    'sensor_type': sensor_type,
+                    'value':       value,
+                    'threshold':   threshold,
+                    'room':        room,
+                    'floor':       floor,
+                    'unit':        unit,
+                    'message':     f'Cảnh báo: {sensor_type}={value}{unit} vượt ngưỡng {threshold}°C tại {room}',
+                    'service':     'monitoring-service',
+                }
+                if main_loop and main_loop.is_running():
+                    asyncio.run_coroutine_threadsafe(
+                        publish_alert('sensor.alert', alert), main_loop
+                    )
     except Exception as e:
         log.error(f'MQTT message error: {e}')
 

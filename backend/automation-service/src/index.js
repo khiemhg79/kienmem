@@ -184,7 +184,7 @@ async function connectRabbit() {
     try {
       const event = JSON.parse(msg.content.toString());
       const key   = msg.fields.routingKey;
-      if (key === 'sensor.alert') {
+      if (key === 'sensor.alert' || key === 'sensor.data') {
         await processSensorAlert(event);
       } else if (key === 'sensor.events' && event.sensor_type === 'camera') {
         console.log('[automation] Received camera event:', event.device_id, 'person_detected:', event.person_detected);
@@ -218,7 +218,14 @@ async function processSensorAlert(event) {
   for (const rule of rules) {
     const c = rule.condition;
     if (c.sensor_type !== sensor_type) continue;
+    if (c.device_id && c.device_id !== event.device_id) continue;
     if (!evalCondition(value, c.operator, c.threshold)) continue;
+    
+    // Cooldown 60s để tránh spam email và lệnh liên tục
+    const now = Date.now();
+    if (rule.last_triggered && (now - new Date(rule.last_triggered).getTime() < 60000)) {
+      continue;
+    }
     await executeRule(rule, event);
   }
 }
@@ -230,10 +237,14 @@ async function executeRule(rule, context) {
     const action = rule.action;
 
     // Step 5-6: Control device via Device Service
-    await axios.post(`${DEVICE_URL}/api/devices/${action.device_id}/control`,
-      { command: action.command, ...(action.params || {}) },
-      { headers: { 'x-internal-service': 'automation-service' } }
-    );
+    const deviceIds = Array.isArray(action.device_ids) ? action.device_ids : (action.device_id ? [action.device_id] : []);
+    
+    await Promise.all(deviceIds.map(dId => 
+      axios.post(`${DEVICE_URL}/api/devices/${dId}/control`,
+        { command: action.command, ...(action.params || {}) },
+        { headers: { 'x-internal-service': 'automation-service' } }
+      ).catch(e => console.error(`[automation] Control ${dId} failed:`, e.message))
+    ));
 
     // Step 7-8: Send notification
     if (rule.notify) {

@@ -21,6 +21,8 @@ export default function Devices() {
   const [editing,   setEditing]   = useState(null)
   const [saving,    setSaving]    = useState(false)
   const [search,    setSearch]    = useState('')
+  const [filterFloor, setFilterFloor] = useState('')
+  const [filterRoom, setFilterRoom] = useState('')
   const [activeTab, setActiveTab] = useState('quick') // 'quick' | 'custom'
   const [aiModal, setAiModal] = useState(false)
   const [aiDevice, setAiDevice] = useState(null)
@@ -128,10 +130,12 @@ export default function Devices() {
     catch (e) { alert(e.response?.data?.error || 'Lỗi xóa') }
   }
 
-  const filtered = devices.filter(d =>
-    d.name.toLowerCase().includes(search.toLowerCase()) ||
-    (d.room||'').toLowerCase().includes(search.toLowerCase())
-  )
+  const filtered = devices.filter(d => {
+    const matchSearch = d.name.toLowerCase().includes(search.toLowerCase())
+    const matchFloor = filterFloor === '' || d.floor === parseInt(filterFloor)
+    const matchRoom = filterRoom === '' || d.room === filterRoom
+    return matchSearch && matchFloor && matchRoom
+  })
 
   return (
     <div className="p-6">
@@ -152,10 +156,24 @@ export default function Devices() {
         </div>
       </div>
 
-      <input value={search} onChange={e => setSearch(e.target.value)}
-        placeholder="Tìm kiếm thiết bị hoặc phòng..."
-        className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500"
-      />
+      <div className="flex flex-col md:flex-row gap-3 mb-4">
+        <input value={search} onChange={e => setSearch(e.target.value)}
+          placeholder="Tìm kiếm tên thiết bị..."
+          className="flex-1 border border-gray-200 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+        <select value={filterFloor} onChange={e => setFilterFloor(e.target.value)}
+          className="border border-gray-200 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+          <option value="">-- Tất cả các tầng --</option>
+          {FLOORS.map(f => <option key={f} value={f}>Tầng {f}</option>)}
+        </select>
+        <select value={filterRoom} onChange={e => setFilterRoom(e.target.value)}
+          className="border border-gray-200 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+          <option value="">-- Tất cả các phòng --</option>
+          {Array.from(new Set(devices.map(d => d.room).filter(Boolean))).sort().map(r => (
+            <option key={r} value={r}>{r}</option>
+          ))}
+        </select>
+      </div>
 
       {loading ? (
         <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-blue-600" /></div>
@@ -173,7 +191,7 @@ export default function Devices() {
                   <span className="text-3xl">{ICONS[d.type] || '🔧'}</span>
                   <div>
                     <p className="font-semibold text-gray-900 leading-tight">{d.name}</p>
-                    <p className="text-xs text-gray-500">{!d.room || d.room === 'none' ? 'Chưa phân phòng' : d.room} · Tầng {d.floor}</p>
+                    <p className="text-xs text-gray-500">{!d.room || d.room === 'none' ? `Sảnh tầng ${d.floor}` : d.room}</p>
                   </div>
                 </div>
                 <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${d.status ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>

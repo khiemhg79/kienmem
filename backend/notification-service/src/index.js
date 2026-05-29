@@ -97,11 +97,9 @@ function auth(req, res, next) {
 async function save(type, message, context = {}, channel = 'in_app') {
   const n = await Notification.create({ type, message, context, channel, status: 'delivered' });
 
-  // Gửi Gmail khi có cảnh báo nhiệt độ hoặc automation
-  if (type === 'sensor_alert' || type === 'automation_alert') {
-    const subject = type === 'sensor_alert'
-      ? '⚠️ Cảnh báo nhiệt độ Smart Office'
-      : '⚠️ Kịch bản tự động kích hoạt'
+  // Gửi Gmail khi có cảnh báo automation (kịch bản tự động kích hoạt)
+  if (type === 'automation_alert') {
+    const subject = '⚠️ Kịch bản tự động kích hoạt'
     await sendEmail(subject, message, type)
   }
 
@@ -112,7 +110,7 @@ async function save(type, message, context = {}, channel = 'in_app') {
 // ── Routes ──────────────────────────────────────────────────
 app.get('/api/notifications', auth, async (req, res) => {
   try {
-    const limit = parseInt(req.query.limit) || 50;
+    const limit = parseInt(req.query.limit) || 10;
     res.json(await Notification.findAll({ order: [['createdAt', 'DESC']], limit }));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
