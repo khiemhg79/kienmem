@@ -158,6 +158,26 @@ app.put('/api/notifications/settings', auth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// GET /api/notifications/settings/floor-plan
+app.get('/api/notifications/settings/floor-plan', auth, async (req, res) => {
+  try {
+    const setting = await SystemSetting.findByPk('FLOOR_PLAN_CONFIG');
+    if (setting) return res.json(JSON.parse(setting.value));
+    res.json({ width: 680, height: 680, rooms: [] }); // Default config
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PUT /api/notifications/settings/floor-plan
+app.put('/api/notifications/settings/floor-plan', auth, async (req, res) => {
+  try {
+    const config = req.body;
+    const value = JSON.stringify(config);
+    const [setting] = await SystemSetting.findOrCreate({ where: { key: 'FLOOR_PLAN_CONFIG' }, defaults: { value } });
+    await setting.update({ value });
+    res.json({ success: true, config });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.post('/api/notifications/send', auth, async (req, res) => {
   try {
     const { type, message, context, channel } = req.body;

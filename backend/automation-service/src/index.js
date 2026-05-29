@@ -311,14 +311,18 @@ app.get('/health', (req, res) => res.json({ status: 'ok', service: 'automation-s
 async function seed() {
   // Fetch ac device id from device-service
   let acDeviceId = null;
-  try {
-    const res = await axios.get(`${DEVICE_URL}/api/devices`, { headers: { 'x-internal-service': 'automation-service' } });
-    const ac301 = res.data.find(d => d.type === 'ac' && d.room === 'room301');
-    const acAny = res.data.find(d => d.type === 'ac');
-    acDeviceId = ac301?.id || acAny?.id || null;
-    console.log('[automation-service] AC device_id:', acDeviceId);
-  } catch (e) {
-    console.log('[automation-service] Không lấy được device list:', e.message);
+  for (let i = 0; i < 10; i++) {
+    try {
+      const res = await axios.get(`${DEVICE_URL}/api/devices`, { headers: { 'x-internal-service': 'automation-service' } });
+      const ac301 = res.data.find(d => d.type === 'ac' && d.room === 'room301');
+      const acAny = res.data.find(d => d.type === 'ac');
+      acDeviceId = ac301?.id || acAny?.id || null;
+      console.log('[automation-service] AC device_id:', acDeviceId);
+      if (acDeviceId) break;
+    } catch (e) {
+      console.log('[automation-service] Không lấy được device list, đang thử lại...', e.message);
+    }
+    await new Promise(r => setTimeout(r, 3000));
   }
 
   // Nếu rule đã tồn tại thì update device_id, nếu chưa thì tạo mới

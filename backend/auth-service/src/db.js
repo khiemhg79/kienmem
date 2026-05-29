@@ -8,7 +8,7 @@ const sequelize = new Sequelize(process.env.DB_URL || 'postgresql://souser:sopas
 
 const Role = sequelize.define('Role', {
   id:          { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
-  name: { type: DataTypes.ENUM('admin','manager','staff','guest'), allowNull: false },
+  name: { type: DataTypes.STRING, allowNull: false },
   permissions: { type: DataTypes.JSONB, defaultValue: {} },
   description: { type: DataTypes.TEXT },
 }, { tableName: 'roles' });
@@ -20,6 +20,7 @@ const User = sequelize.define('User', {
   password_hash: { type: DataTypes.STRING, allowNull: false },
   role_id:       { type: DataTypes.UUID },
   assigned_room: { type: DataTypes.STRING, allowNull: true },
+  assigned_floor: { type: DataTypes.INTEGER, allowNull: true },
   is_active:     { type: DataTypes.BOOLEAN, defaultValue: true },
   last_login:    { type: DataTypes.DATE },
 }, { tableName: 'users' });

@@ -30,7 +30,7 @@ const DeviceGroup = sequelize.define('DeviceGroup', {
 const Device = sequelize.define('Device', {
   id:          { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
   name:        { type: DataTypes.STRING, allowNull: false },
-  type:        { type: DataTypes.ENUM('light','ac','camera','door','sensor'), allowNull: false },
+  type:        { type: DataTypes.ENUM('light','ac','camera','door','sensor','projector','printer','tv','router'), allowNull: false },
   room:        DataTypes.STRING,
   floor:       { type: DataTypes.INTEGER, defaultValue: 1 },
   status:      { type: DataTypes.BOOLEAN, defaultValue: false },

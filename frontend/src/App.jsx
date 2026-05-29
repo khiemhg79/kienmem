@@ -7,6 +7,7 @@ import Notifications from './pages/Notifications'
 import Simulation    from './pages/Simulation'
 import EmailSettings from './pages/EmailSettings'
 import Report        from './pages/Report'
+import Accounts      from './pages/Accounts'
 import Layout        from './components/Layout'
 import { CameraAIProvider } from './components/CameraAIProvider'
 import { DeviceProvider }   from './store/deviceStore'
@@ -40,6 +41,7 @@ export default function App() {
           <Route path="notifications" element={<Notifications />} />
           <Route path="email-settings" element={<EmailSettings />} />
           <Route path="report"        element={<Report />} />
+          <Route path="accounts"      element={<Accounts />} />
         </Route>
       </Routes>
     </BrowserRouter>

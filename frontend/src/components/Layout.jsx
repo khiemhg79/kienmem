@@ -1,17 +1,18 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, Cpu, Zap, Bell, LogOut, Building2, Box, Mail, FileText } from 'lucide-react'
+import { LayoutDashboard, Cpu, Zap, Bell, LogOut, Building2, Box, Mail, FileText, Users } from 'lucide-react'
 import { logout } from '../services/api'
 import { useState, useEffect } from 'react'
 import { getUnreadCount } from '../services/api'
 
 const NAV = [
-  { to: '/',              icon: LayoutDashboard, label: 'Dashboard',     roles: ['admin', 'manager', 'staff', 'guest'] },
-  { to: '/devices',       icon: Cpu,             label: 'Thiết bị',      roles: ['admin', 'manager', 'staff', 'guest'] },
-  { to: '/automation',    icon: Zap,             label: 'Tự động hóa',   roles: ['admin', 'manager', 'staff'] },
-  { to: '/simulation',    icon: Box,             label: 'Mô phỏng 3D',   roles: ['admin', 'manager', 'staff', 'guest'] },
-  { to: '/notifications', icon: Bell,            label: 'Thông báo',     roles: ['admin', 'manager', 'staff', 'guest'] },
+  { to: '/',              icon: LayoutDashboard, label: 'Dashboard',     roles: ['admin', 'manager', 'director', 'staff', 'guest'] },
+  { to: '/devices',       icon: Cpu,             label: 'Thiết bị',      roles: ['admin', 'manager', 'director', 'staff', 'guest'] },
+  { to: '/automation',    icon: Zap,             label: 'Tự động hóa',   roles: ['admin', 'manager', 'director', 'staff'] },
+  { to: '/simulation',    icon: Box,             label: 'Mô phỏng 3D',   roles: ['admin', 'manager', 'director', 'staff', 'guest'] },
+  { to: '/notifications', icon: Bell,            label: 'Thông báo',     roles: ['admin', 'manager', 'director', 'staff', 'guest'] },
+  { to: '/accounts',      icon: Users,           label: 'Tài khoản',     roles: ['admin'] },
   { to: '/email-settings',icon: Mail,            label: 'Cấu hình Email',roles: ['admin'] },
-  { to: '/report',        icon: FileText,        label: 'Báo cáo',       roles: ['admin', 'manager'] },
+  { to: '/report',        icon: FileText,        label: 'Báo cáo',       roles: ['admin', 'manager', 'director'] },
 ]
 
 export default function Layout() {
@@ -32,7 +33,7 @@ export default function Layout() {
   async function handleLogout() {
     await logout().catch(() => {})
     localStorage.clear()
-    navigate('/login')
+    window.location.href = '/login'
   }
 
   return (

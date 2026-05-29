@@ -80,6 +80,12 @@ export const login  = (email, password) => api.post('/auth/login', { email, pass
 export const logout = ()                 => api.post('/auth/logout')
 export const getMe  = ()                 => api.get('/auth/me')
 
+// ── Users ────────────────────────────────────────
+export const getUsers   = ()         => api.get('/users')
+export const createUser = (data)     => api.post('/users', data)
+export const updateUser = (id, data) => api.put(`/users/${id}`, data)
+export const deleteUser = (id)       => api.delete(`/users/${id}`)
+
 // ── Devices ──────────────────────────────────────
 export const getDevices     = ()         => api.get('/devices')
 export const getDevice      = (id)       => api.get(`/devices/${id}`)
@@ -99,8 +105,11 @@ export const getRuleLogs = (id)       => api.get(`/automations/${id}/logs`)
 // ── Sensors ───────────────────────────────────────
 export const getLatestSensors = (room)        => api.get('/sensors/latest', { params: { room } })
 export const getSensorHistory = (room, hours) => api.get('/sensors/history', { params: { room, hours } })
-export const getSimulationConfig = ()         => api.get('/sensors/simulation')
+export const getSimulationConfig    = ()      => api.get('/sensors/simulation')
 export const updateSimulationConfig = (data)  => api.post('/sensors/simulation', data)
+
+export const getFloorPlanConfig     = ()      => api.get('/notifications/settings/floor-plan')
+export const updateFloorPlanConfig  = (data)  => api.put('/notifications/settings/floor-plan', data)
 
 // ── Notifications ────────────────────────────────
 export const getNotifications     = () => api.get('/notifications')

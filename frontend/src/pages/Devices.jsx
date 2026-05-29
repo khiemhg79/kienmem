@@ -3,11 +3,11 @@ import { Plus, Pencil, Trash2, Power, RefreshCw, Loader2, Settings } from 'lucid
 import { createDevice, updateDevice, deleteDevice } from '../services/api'
 import { useDeviceStore } from '../store/deviceStore.jsx'
 
-const TYPES  = ['light','ac','camera','door','sensor']
-const ICONS  = { light:'💡', ac:'❄️', camera:'📷', door:'🚪', sensor:'📡' }
+const TYPES  = ['light','ac','camera','door','sensor','projector','printer','tv','router']
+const ICONS  = { light:'💡', ac:'❄️', camera:'📹', door:'🚪', sensor:'🌡️', projector:'📽️', printer:'🖨️', tv:'📺', router:'📡' }
 const FLOORS = [1,2,3,4,5]
 
-const INIT = { name:'', type:'light', room:'', floor:1, ip_address:'', mqtt_topic:'' }
+const INIT = { name:'', type:'light', room:'none', floor:1, ip_address:'', mqtt_topic:'' }
 
 export default function Devices() {
   const { devices, loading, toggling, toggleDevice, refreshDevices } = useDeviceStore()
@@ -173,7 +173,7 @@ export default function Devices() {
                   <span className="text-3xl">{ICONS[d.type] || '🔧'}</span>
                   <div>
                     <p className="font-semibold text-gray-900 leading-tight">{d.name}</p>
-                    <p className="text-xs text-gray-500">{d.room} · Tầng {d.floor}</p>
+                    <p className="text-xs text-gray-500">{!d.room || d.room === 'none' ? 'Chưa phân phòng' : d.room} · Tầng {d.floor}</p>
                   </div>
                 </div>
                 <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${d.status ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
@@ -281,10 +281,9 @@ export default function Devices() {
                       <label className="block text-xs font-semibold text-gray-500 mb-1">PHÒNG</label>
                       <input 
                         type="text" 
-                        value={form.room} 
-                        onChange={e => setForm(f => ({ ...f, room: e.target.value }))}
-                        placeholder="Vd: room101, lobby"
-                        className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" 
+                        value="Tự động gán (kéo trên sa bàn 3D)" 
+                        disabled
+                        className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm bg-gray-50 text-gray-400 cursor-not-allowed" 
                       />
                     </div>
                     <div>
@@ -326,7 +325,7 @@ export default function Devices() {
               ) : (
                 /* Form Cấu Hình Chi Tiết (Custom / Editing) */
                 <div className="space-y-3">
-                  {[['Tên thiết bị','name','text'],['Phòng','room','text'],['IP Address','ip_address','text'],['MQTT Topic','mqtt_topic','text']].map(([label, key, type]) => (
+                  {[['Tên thiết bị','name','text'],['IP Address','ip_address','text'],['MQTT Topic','mqtt_topic','text']].map(([label, key, type]) => (
                     <div key={key}>
                       <label className="block text-xs font-semibold text-gray-500 mb-1">{label.toUpperCase()}</label>
                       <input 
@@ -338,6 +337,16 @@ export default function Devices() {
                       />
                     </div>
                   ))}
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-500 mb-1">PHÒNG</label>
+                    <input 
+                      type="text" 
+                      value={form.room || 'none'} 
+                      disabled
+                      title="Phòng được tự động gắn khi bạn di chuyển thiết bị trên Mô phỏng 3D"
+                      className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm bg-gray-50 text-gray-400 cursor-not-allowed" 
+                    />
+                  </div>
                   
                   <div className="grid grid-cols-2 gap-3">
                     <div>

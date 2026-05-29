@@ -126,7 +126,17 @@ export default function Dashboard() {
   const maxTemp = history.length ? Math.max(...history.map(h => h.temperature)) : 0
   const activeRules = rules.filter(r => r.is_active)
 
-  const DEVICE_ICONS = { light: '💡', ac: '❄️', camera: '📷', door: '🚪', sensor: '📡' }
+  const DEVICE_ICONS = {
+  light: '💡',
+  ac: '❄️',
+  camera: '📹',
+  door: '🚪',
+  sensor: '🌡️',
+  projector: '📽️',
+  printer: '🖨️',
+  tv: '📺',
+  router: '📡'
+};
 
   return (
     <div className="p-6 space-y-6">
@@ -296,7 +306,7 @@ export default function Dashboard() {
                     <span className="text-base">{DEVICE_ICONS[d.type] || '🔧'}</span>
                     <div>
                       <p className="text-xs font-medium text-gray-800 leading-tight">{d.name}</p>
-                      <p className="text-xs text-gray-400">{d.room}</p>
+                      <p className="text-xs text-gray-400">{!d.room || d.room === 'none' ? 'Chưa phân phòng' : d.room}</p>
                     </div>
                   </div>
                   <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${d.status ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>

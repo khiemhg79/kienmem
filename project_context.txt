@@ -1,0 +1,58 @@
+# Tổng quan cấu trúc dự án: Smart Office Management System
+
+Đây là tài liệu đúc kết toàn bộ cấu trúc và thông tin về dự án Smart Office, phục vụ làm ngữ cảnh (context) cho các trợ lý AI trong các cuộc trò chuyện tiếp theo.
+
+## 1. Thông tin chung
+- **Tên dự án**: Smart Office Management System (Đề thi IT03A - Mã đề 2511).
+- **Mục đích**: Hệ thống IoT quản lý thiết bị văn phòng, theo dõi thông số môi trường (nhiệt độ) và tự động hóa cảnh báo.
+- **Cách khởi chạy**: Chạy bằng Docker thông qua lệnh `docker-compose up --build`.
+
+## 2. Kiến trúc hệ thống
+Dự án được xây dựng theo kiến trúc Microservices kết hợp với IoT và Frontend SPA.
+
+### 2.1. Frontend
+- Nằm trong thư mục `frontend/`.
+- Sử dụng **React** + **Vite** + **Tailwind CSS**.
+- Truy cập qua cổng `5173` (localhost:5173).
+
+### 2.2. Backend (Microservices)
+Các services nằm trong thư mục `backend/`, giao tiếp thông qua REST API hoặc Message Broker (RabbitMQ):
+1. **api-gateway** (Port: 9000 ngoài, 3000 trong container): Định tuyến request từ frontend đến các service khác.
+2. **auth-service** (Port 3001): Xử lý đăng nhập, xác thực (JWT), phân quyền (RBAC). Sử dụng Postgres và Redis.
+3. **device-service** (Port 3002): Quản lý vòng đời và trạng thái thiết bị. Kết nối với Postgres, Mosquitto, và RabbitMQ.
+4. **automation-service** (Port 3003): Xử lý các kịch bản tự động hóa (ví dụ: bật điều hòa khi nhiệt độ cao). Gọi API qua device-service và notification-service.
+5. **monitoring-service** (Port 3004): Dịch vụ giám sát realtime (viết bằng Python), đọc dữ liệu cảm biến từ Mosquitto (MQTT), phân tích (ngưỡng 29°C), lưu vào InfluxDB và đẩy cảnh báo vào RabbitMQ.
+6. **notification-service** (Port 3005): Gửi thông báo (Email qua Gmail SMTP). Kết nối với Postgres và RabbitMQ.
+
+### 2.3. IoT Simulator
+- Nằm trong thư mục `iot-simulator/`.
+- Viết bằng **Node.js**.
+- Giả lập thiết bị IoT gửi dữ liệu đo lường (nhiệt độ) qua giao thức MQTT đến Mosquitto broker. Có kịch bản giả lập nhiệt độ vượt ngưỡng (`node simulator.js --scenario temp-exceed`).
+
+### 2.4. Infrastructure (Cơ sở hạ tầng & Database)
+Cấu hình nằm trong thư mục `infra/` và `docker-compose.yml`:
+- **Postgres** (Port 5433): Cơ sở dữ liệu chính phân chia theo logic các dịch vụ (so_auth, so_devices, so_notifications).
+- **InfluxDB** (Port 8086): Time-series database chuyên lưu trữ dữ liệu cảm biến (sensor_data).
+- **Redis** (Port 6379): Cache data (dùng cho auth-service).
+- **RabbitMQ** (Port 5672, UI: 15672): Message broker hỗ trợ liên lạc bất đồng bộ (ví dụ: xử lý cảnh báo, log, thông báo).
+- **Mosquitto** (Port 1883): MQTT Broker để giao tiếp với các thiết bị IoT/simulator.
+
+## 3. Cấu trúc thư mục chi tiết (Root)
+```text
+D:\Mon Hoc\Kien mem\Main
+├── .env.example              # Biến môi trường mẫu
+├── docker-compose.yml        # Định nghĩa toàn bộ services, network, volume
+├── README.md                 # Hướng dẫn chạy dự án
+├── backend/                  # Chứa mã nguồn 6 microservices (Node.js & Python)
+├── frontend/                 # Source code giao diện React Vite
+├── infra/                    # Script khởi tạo Postgres (init.sql) và cấu hình Mosquitto
+└── iot-simulator/            # Source code Node.js giả lập IoT
+```
+
+## 4. Tài khoản mặc định & Token
+- **Hệ thống web**: `admin@smartoffice.vn` / `Admin@123`
+- **RabbitMQ**: `souser` / `sopassword`
+- **InfluxDB**: `admin` / `influxpassword` (Token: `so-influx-token-2025`, Org: `smart-office`, Bucket: `sensor_data`)
+- **Postgres**: `souser` / `sopassword`
+
+*Ghi chú cho AI: Khi được yêu cầu hỗ trợ sửa lỗi hoặc phát triển tính năng, hãy tham chiếu đến file này để hiểu tổng quan kiến trúc, luồng dữ liệu giữa các services, cơ sở dữ liệu được sử dụng ở từng module, và cấu hình cổng trong docker.*

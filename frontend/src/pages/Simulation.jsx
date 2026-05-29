@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef } from 'react'
 import { updateDevice } from '../services/api'
+import { getFloorPlanConfig, updateFloorPlanConfig } from '../services/api'
 import { useDeviceStore } from '../store/deviceStore.jsx'
 import { useCameraAI } from '../components/CameraAIProvider'
 import {
   Loader2, Lightbulb, Snowflake, Camera, DoorClosed,
   Radio, Server, Wifi, WifiOff, Zap, ZapOff,
-  ThermometerSun, Activity
+  ThermometerSun, Activity, Projector, Printer, Tv, Router
 } from 'lucide-react'
 
 const DEVICE_CONFIG = {
@@ -14,6 +15,10 @@ const DEVICE_CONFIG = {
   camera: { icon: Camera,      label: 'Camera',      color: '#A78BFA', glow: 'rgba(167,139,250,0.4)',  clickable: true },
   door:   { icon: DoorClosed,  label: 'Cửa',         color: '#34D399', glow: 'rgba(52,211,153,0.6)',   clickable: true  },
   sensor: { icon: Radio,       label: 'Cảm biến',    color: '#FB923C', glow: 'rgba(251,146,60,0.4)',   clickable: true },
+  projector:{ icon: Projector, label: 'Máy chiếu',   color: '#F43F5E', glow: 'rgba(244,63,94,0.6)',    clickable: true },
+  printer:  { icon: Printer,   label: 'Máy in',      color: '#8B5CF6', glow: 'rgba(139,92,246,0.6)',   clickable: true },
+  tv:       { icon: Tv,        label: 'TV',          color: '#3B82F6', glow: 'rgba(59,130,246,0.6)',   clickable: true },
+  router:   { icon: Router,    label: 'Router',      color: '#10B981', glow: 'rgba(16,185,129,0.6)',   clickable: true },
 }
 
 // Vị trí cố định cho từng tầng
@@ -91,11 +96,12 @@ function DeviceNode({ device, index, floor, onToggle, isEditingLayout, onPositio
 
   return (
     <div
+      id={`device-node-${device.id}`}
       className={`absolute w-14 h-14 group transition-all duration-300 ${isEditingLayout ? (isDragging ? 'cursor-grabbing' : 'cursor-grab') : (cfg.clickable ? 'cursor-pointer' : 'cursor-default')}`}
       style={{
         left: `${pos.x}%`, top: `${pos.y}%`,
         transformStyle: 'preserve-3d',
-        transform: 'translate(-50%, -50%) translateZ(0px)',
+        transform: 'translate(-50%, -50%) translateZ(2px)',
         zIndex: isDragging ? 100 : (isOn ? 10 : 5),
         transitionDuration: isDragging ? '0ms' : '300ms',
       }}
@@ -207,7 +213,7 @@ function DeviceNode({ device, index, floor, onToggle, isEditingLayout, onPositio
       >
         <div className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white whitespace-nowrap shadow-xl">
           <div className="font-semibold">{device.name}</div>
-          <div className="text-slate-400">{cfg.label} · Tầng {device.floor} · {device.room}</div>
+          <div className="text-slate-400">{cfg.label} · Tầng {device.floor} · {!device.room || device.room === 'none' ? 'Chưa phân phòng' : device.room}</div>
           <div className={`mt-1 font-medium ${isOn ? 'text-green-400' : 'text-slate-500'}`}>
             {isOn ? '● Đang bật' : '○ Đang tắt'}
           </div>
@@ -218,6 +224,9 @@ function DeviceNode({ device, index, floor, onToggle, isEditingLayout, onPositio
 }
 
 export default function Simulation() {
+  const user = JSON.parse(localStorage.getItem('user') || '{}');
+  const isAdmin = user.role === 'admin';
+
   const { devices, setDevices, loading, toggling, toggleDevice } = useDeviceStore()
 
   const [floor,     setFloor]     = useState(1)
@@ -226,6 +235,50 @@ export default function Simulation() {
   const [camFeedUrl, setCamFeedUrl] = useState('')
   const [retryKey,  setRetryKey]  = useState(0)
 
+  const [baseConfig, setBaseConfig] = useState({ width: 680, height: 680, rooms: [], floors: {} })
+  const [selection, setSelection] = useState(null)
+  const [selectedRoomId, setSelectedRoomId] = useState(null)
+  const [zoom, setZoom] = useState(1)
+
+  const isPointInRotatedRect = (px, py, rx, ry, rw, rh, rotation = 0) => {
+    if (!rotation) return px >= rx && px <= rx + rw && py >= ry && py <= ry + rh;
+    const cx = rx + rw / 2;
+    const cy = ry + rh / 2;
+    const tx = px - cx;
+    const ty = py - cy;
+    const rad = -rotation * (Math.PI / 180);
+    const nx = tx * Math.cos(rad) - ty * Math.sin(rad);
+    const ny = tx * Math.sin(rad) + ty * Math.cos(rad);
+    const finalX = nx + cx;
+    const finalY = ny + cy;
+    return finalX >= rx && finalX <= rx + rw && finalY >= ry && finalY <= ry + rh;
+  };
+
+  const getFloorConfig = (config, f) => {
+    if (config.floors && config.floors[f]) return config.floors[f];
+    return { width: config.width || 680, height: config.height || 680, shape: 'square' };
+  };
+  const currentFloorConfig = getFloorConfig(baseConfig, floor);
+
+  const setFloorConfig = (f, updates) => {
+    setBaseConfig(prev => {
+      const existing = getFloorConfig(prev, f);
+      return {
+        ...prev,
+        floors: {
+          ...(prev.floors || {}),
+          [f]: { ...existing, ...updates }
+        }
+      };
+    });
+  };
+
+  useEffect(() => {
+    getFloorPlanConfig().then(r => {
+      if (r.data && r.data.width) setBaseConfig(r.data)
+    }).catch(() => {})
+  }, [])
+
   const [isEditingLayout, setIsEditingLayout] = useState(false)
 
   const [rotationZ, setRotationZ] = useState(-45)
@@ -233,46 +286,126 @@ export default function Simulation() {
   const rotateRef = useRef({ startX: 0, startRotation: 0 })
 
   const handleScenePointerDown = (e) => {
-    if (isEditingLayout) return;
     if (e.button !== 0) return;
     if (e.target.closest('.group')) return;
-    setIsRotating(true);
-    e.currentTarget.setPointerCapture(e.pointerId);
-    rotateRef.current = {
-      startX: e.clientX,
-      startRotation: rotationZ
-    };
+    
+    if (isEditingLayout) {
+      setSelectedRoomId(null);
+      const rect = e.currentTarget.getBoundingClientRect();
+      const x = (e.clientX - rect.left) / 0.95;
+      const y = (e.clientY - rect.top) / 0.95;
+      setSelection({ startX: x, startY: y, currentX: x, currentY: y });
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } else {
+      setIsRotating(true);
+      e.currentTarget.setPointerCapture(e.pointerId);
+      rotateRef.current = { startX: e.clientX, startRotation: rotationZ };
+    }
   };
 
   const handleScenePointerMove = (e) => {
-    if (!isRotating) return;
-    const deltaX = e.clientX - rotateRef.current.startX;
-    // Thay đổi dấu (+) thành (-) để quay đúng hướng kéo chuột
-    const newRotation = rotateRef.current.startRotation - deltaX * 0.5;
-    setRotationZ(newRotation);
+    if (isEditingLayout && selection) {
+      const rect = e.currentTarget.getBoundingClientRect();
+      const x = Math.max(0, Math.min(currentFloorConfig.width, (e.clientX - rect.left) / 0.95));
+      const y = Math.max(0, Math.min(currentFloorConfig.height, (e.clientY - rect.top) / 0.95));
+      setSelection(prev => ({ ...prev, currentX: x, currentY: y }));
+    } else if (isRotating) {
+      const deltaX = e.clientX - rotateRef.current.startX;
+      setRotationZ(rotateRef.current.startRotation - deltaX * 0.5);
+    }
   };
 
-  const handleScenePointerUp = (e) => {
-    if (!isRotating) return;
-    e.currentTarget.releasePointerCapture(e.pointerId);
-    setIsRotating(false);
+  const handleScenePointerUp = async (e) => {
+    if (isRotating) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+      setIsRotating(false);
+    } else if (isEditingLayout && selection) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+      const { startX, startY, currentX, currentY } = selection;
+      setSelection(null);
+      
+      const width = Math.abs(currentX - startX);
+      const height = Math.abs(currentY - startY);
+      if (width < 30 || height < 30) return;
+      
+      const name = prompt("Nhập tên phòng ban (vd: Phòng Marketing):");
+      if (!name) return;
+      
+      const left = Math.min(startX, currentX);
+      const top = Math.min(startY, currentY);
+      
+      const newRoom = {
+        id: Date.now().toString(),
+        name,
+        left: (left / currentFloorConfig.width) * 100,
+        top: (top / currentFloorConfig.height) * 100,
+        width: (width / currentFloorConfig.width) * 100,
+        height: (height / currentFloorConfig.height) * 100,
+        floor: floor,
+        color: '#' + Math.floor(Math.random()*16777215).toString(16).padEnd(6, '0')
+      };
+      
+      const newConfig = { ...baseConfig, rooms: [...(baseConfig.rooms || []), newRoom] };
+      setBaseConfig(newConfig);
+      await updateFloorPlanConfig(newConfig).catch(console.error);
+      await reassignDevicesRoom(newConfig);
+    }
   };
 
   const { activeCamera, setActiveCamera } = useCameraAI()
+
+  // Hàm tiện ích: Tự động phát hiện phòng dựa trên tọa độ
+  const detectRoom = (x, y, floorLevel) => {
+    if (!baseConfig || !baseConfig.rooms) return 'none';
+    for (const r of baseConfig.rooms) {
+      if (r.floor === floorLevel && isPointInRotatedRect(x, y, r.left, r.top, r.width, r.height, r.rotation)) {
+        return r.name;
+      }
+    }
+    return 'none';
+  };
 
   const handlePositionChange = async (deviceId, x, y) => {
     const dev = devices.find(d => d.id === deviceId);
     if (!dev) return;
     const updatedSettings = { ...dev.settings, x, y };
+    const newRoom = detectRoom(x, y, dev.floor);
     
     // Cập nhật giao diện ngay lập tức
-    setDevices(prev => prev.map(d => d.id === deviceId ? { ...d, settings: updatedSettings } : d));
+    setDevices(prev => prev.map(d => d.id === deviceId ? { ...d, room: newRoom, settings: updatedSettings } : d));
     
     // Gọi API lưu
     try {
-      await updateDevice(deviceId, { settings: updatedSettings });
+      await updateDevice(deviceId, { room: newRoom, settings: updatedSettings });
     } catch (e) {
       console.error('Lỗi khi lưu vị trí thiết bị', e);
+    }
+  };
+
+  // Cập nhật lại toàn bộ thiết bị khi mặt bằng phòng bị thay đổi
+  const reassignDevicesRoom = async (newConfig) => {
+    const updates = [];
+    setDevices(prev => prev.map(d => {
+      const x = d.settings?.x || 0;
+      const y = d.settings?.y || 0;
+      let newRoom = 'none';
+      for (const r of (newConfig.rooms || [])) {
+        if (r.floor === d.floor && isPointInRotatedRect(x, y, r.left, r.top, r.width, r.height, r.rotation)) {
+          newRoom = r.name;
+          break;
+        }
+      }
+      if (d.room !== newRoom) {
+        updates.push({ id: d.id, room: newRoom });
+        return { ...d, room: newRoom };
+      }
+      return d;
+    }));
+
+    for (const update of updates) {
+      try {
+        await updateDevice(update.id, { room: update.room });
+      } catch(e) { console.error('Lỗi update room', e); }
     }
   };
 
@@ -326,6 +459,13 @@ export default function Simulation() {
               Live
             </div>
 
+            {/* Zoom Controls */}
+            <div className="flex gap-1 items-center bg-slate-800/80 px-2 py-1.5 rounded-xl border border-slate-700/50">
+              <button className="text-slate-400 hover:text-white px-2" onClick={() => setZoom(z => Math.max(0.2, z - 0.1))}>-</button>
+              <span className="text-xs text-cyan-400 font-mono w-10 text-center">{Math.round(zoom * 100)}%</span>
+              <button className="text-slate-400 hover:text-white px-2" onClick={() => setZoom(z => Math.min(3, z + 0.1))}>+</button>
+            </div>
+
             {/* Floor selector */}
             <div className="flex gap-1 bg-slate-800/80 p-1 rounded-xl border border-slate-700/50">
               {[1, 2, 3].map(f => (
@@ -341,16 +481,89 @@ export default function Simulation() {
             </div>
             
             {/* Edit Mode Toggle */}
-            <button 
-              onClick={() => setIsEditingLayout(!isEditingLayout)}
-              className={`px-4 py-1.5 ml-2 rounded-xl text-sm font-medium transition-all duration-300 flex items-center gap-2 ${
-                isEditingLayout 
-                  ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-[0_0_12px_rgba(245,158,11,0.15)]' 
-                  : 'bg-slate-800/80 text-slate-300 border border-slate-700/50 hover:bg-slate-700/80'
-              }`}
-            >
-              {isEditingLayout ? 'Xong (Lưu)' : 'Sửa bố cục'}
-            </button>
+            {isAdmin && (
+              <>
+                {isEditingLayout && (
+                  <div className="flex gap-2 mr-2 items-center bg-slate-800/80 p-1.5 rounded-xl border border-slate-700/50">
+                    {selectedRoomId ? (
+                      <>
+                        <span className="text-xs text-amber-400 pl-1 font-bold">Phòng:</span>
+                        <select className="bg-slate-900 border border-slate-700 text-white text-xs px-1.5 py-1 rounded focus:outline-none"
+                                value={baseConfig.rooms.find(r => r.id === selectedRoomId)?.shape || 'square'}
+                                onChange={async e => {
+                                  const newShape = e.target.value;
+                                  const newConfig = { ...baseConfig, rooms: baseConfig.rooms.map(r => r.id === selectedRoomId ? { ...r, shape: newShape } : r) };
+                                  setBaseConfig(newConfig);
+                                  await updateFloorPlanConfig(newConfig).catch(console.error);
+                                }}>
+                          <option value="square">Vuông/Chữ nhật</option>
+                          <option value="L">Chữ L</option>
+                          <option value="U">Chữ U</option>
+                          <option value="T">Chữ T</option>
+                        </select>
+                        
+                        <label className="text-xs text-slate-400 ml-2">Xoay:</label>
+                        <input type="range" min="0" max="360" step="5" className="w-16 accent-amber-500"
+                               value={baseConfig.rooms.find(r => r.id === selectedRoomId)?.rotation || 0}
+                               onChange={async e => {
+                                 const newRot = Number(e.target.value);
+                                 const newConfig = { ...baseConfig, rooms: baseConfig.rooms.map(r => r.id === selectedRoomId ? { ...r, rotation: newRot } : r) };
+                                 setBaseConfig(newConfig);
+                                 await updateFloorPlanConfig(newConfig).catch(console.error);
+                               }} />
+                        <span className="text-xs text-amber-400 w-7 text-right">{baseConfig.rooms.find(r => r.id === selectedRoomId)?.rotation || 0}°</span>
+
+                        <button className="bg-red-500/20 text-red-400 border border-red-500/40 text-xs px-2 py-1 ml-2 rounded hover:bg-red-500/40"
+                                onClick={async () => {
+                                  if (confirm('Xóa phòng này?')) {
+                                    const newConfig = { ...baseConfig, rooms: baseConfig.rooms.filter(r => r.id !== selectedRoomId) };
+                                    setBaseConfig(newConfig);
+                                    setSelectedRoomId(null);
+                                    await updateFloorPlanConfig(newConfig).catch(console.error);
+                                    await reassignDevicesRoom(newConfig);
+                                  }
+                                }}>Xóa</button>
+                      </>
+                    ) : (
+                      <>
+                        <span className="text-xs text-cyan-400 pl-1 font-bold">Sàn Tầng {floor}:</span>
+                        <select className="bg-slate-900 border border-slate-700 text-white text-xs px-1.5 py-1 rounded focus:outline-none"
+                                value={currentFloorConfig.shape || 'square'}
+                                onChange={e => setFloorConfig(floor, { shape: e.target.value })}>
+                          <option value="square">Vuông/Chữ nhật</option>
+                          <option value="L">Chữ L</option>
+                          <option value="U">Chữ U</option>
+                          <option value="T">Chữ T</option>
+                        </select>
+                        <label className="text-xs text-slate-400 ml-1">Rộng:</label>
+                        <input type="number" className="w-14 bg-slate-900 border border-slate-700 text-white text-xs px-1.5 py-1 rounded" 
+                               value={currentFloorConfig.width} 
+                               onChange={e => setFloorConfig(floor, { width: Number(e.target.value) })} />
+                        <label className="text-xs text-slate-400">Dài:</label>
+                        <input type="number" className="w-14 bg-slate-900 border border-slate-700 text-white text-xs px-1.5 py-1 rounded" 
+                               value={currentFloorConfig.height} 
+                               onChange={e => setFloorConfig(floor, { height: Number(e.target.value) })} />
+                      </>
+                    )}
+                  </div>
+                )}
+                <button 
+                  onClick={async () => {
+                    if (isEditingLayout) {
+                      await updateFloorPlanConfig(baseConfig).catch(console.error);
+                    }
+                    setIsEditingLayout(!isEditingLayout);
+                  }}
+                  className={`px-4 py-1.5 ml-1 rounded-xl text-sm font-medium transition-all duration-300 flex items-center gap-2 ${
+                    isEditingLayout 
+                      ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-[0_0_12px_rgba(245,158,11,0.15)]' 
+                      : 'bg-slate-800/80 text-slate-300 border border-slate-700/50 hover:bg-slate-700/80'
+                  }`}
+                >
+                  {isEditingLayout ? 'Xong (Lưu)' : 'Sửa bố cục'}
+                </button>
+              </>
+            )}
           </div>
         </div>
 
@@ -363,23 +576,28 @@ export default function Simulation() {
             </div>
           </div>
         ) : (
-          <div className="flex-1 flex items-center justify-center" style={{ perspective: '2000px' }}>
+          <div className="flex-1 flex items-center justify-center overflow-hidden" style={{ perspective: '2000px' }}
+               onWheel={(e) => {
+                 // Cho phép cuộn chuột để zoom
+                 if (e.deltaY !== 0) {
+                   setZoom(prev => Math.max(0.2, Math.min(3, prev - e.deltaY * 0.001)));
+                 }
+               }}>
             <div
               onPointerDown={handleScenePointerDown}
               onPointerMove={handleScenePointerMove}
               onPointerUp={handleScenePointerUp}
               onPointerCancel={handleScenePointerUp}
-              className={`relative select-none ${isRotating ? 'cursor-grabbing' : (isEditingLayout ? 'cursor-default' : 'cursor-grab')}`}
+              className={`relative select-none ${isRotating ? 'cursor-grabbing' : (isEditingLayout ? 'cursor-crosshair' : 'cursor-grab')}`}
               style={{
-                width: 680, height: 680,
+                width: currentFloorConfig.width, height: currentFloorConfig.height,
                 transform: isEditingLayout 
-                  ? 'rotateX(0deg) rotateZ(0deg) scale(0.95)' 
-                  : `rotateX(58deg) rotateZ(${rotationZ}deg)`,
+                  ? `rotateX(0deg) rotateZ(0deg) scale(${0.95 * zoom})` 
+                  : `rotateX(58deg) rotateZ(${rotationZ}deg) scale(${zoom})`,
                 transformStyle: 'preserve-3d',
                 transition: isRotating ? 'none' : 'transform 700ms cubic-bezier(0.16, 1, 0.3, 1)',
               }}
             >
-              {/* Sàn chính */}
               <div
                 className="absolute inset-0 rounded-[48px] border border-cyan-900/20"
                 style={{
@@ -390,13 +608,21 @@ export default function Simulation() {
                   `,
                   backgroundSize: '60px 60px',
                   boxShadow: '0 40px 120px rgba(0,0,0,0.9), inset 0 1px 0 rgba(34,211,238,0.1)',
+                  clipPath: currentFloorConfig.shape === 'L' ? 'polygon(0% 0%, 50% 0%, 50% 50%, 100% 50%, 100% 100%, 0% 100%)' :
+                            currentFloorConfig.shape === 'U' ? 'polygon(0% 0%, 30% 0%, 30% 70%, 70% 70%, 70% 0%, 100% 0%, 100% 100%, 0% 100%)' :
+                            currentFloorConfig.shape === 'T' ? 'polygon(0% 0%, 100% 0%, 100% 40%, 65% 40%, 65% 100%, 35% 100%, 35% 40%, 0% 40%)' : 'none',
                 }}
               />
 
               {/* Cạnh sàn (độ dày 3D) */}
               <div
                 className="absolute inset-0 rounded-[48px] bg-slate-900 border border-slate-800"
-                style={{ transform: 'translateZ(-28px)' }}
+                style={{ 
+                  transform: 'translateZ(-28px)',
+                  clipPath: currentFloorConfig.shape === 'L' ? 'polygon(0% 0%, 50% 0%, 50% 50%, 100% 50%, 100% 100%, 0% 100%)' :
+                            currentFloorConfig.shape === 'U' ? 'polygon(0% 0%, 30% 0%, 30% 70%, 70% 70%, 70% 0%, 100% 0%, 100% 100%, 0% 100%)' :
+                            currentFloorConfig.shape === 'T' ? 'polygon(0% 0%, 100% 0%, 100% 40%, 65% 40%, 65% 100%, 35% 100%, 35% 40%, 0% 40%)' : 'none',
+                }}
               />
 
               {/* Góc bo sàn */}
@@ -449,6 +675,146 @@ export default function Simulation() {
                   rotationZ={rotationZ}
                 />
               ))}
+
+              {/* Các phòng ban (Rooms) */}
+              {(baseConfig.rooms || []).filter(r => r.floor === floor).map(r => (
+                <div key={r.id} className={`absolute border flex items-center justify-center transition-all group cursor-move ${selectedRoomId === r.id ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900 brightness-125' : 'hover:brightness-110'}`}
+                     style={{
+                       left: `${r.left}%`, top: `${r.top}%`, width: `${r.width}%`, height: `${r.height}%`,
+                       backgroundColor: `${r.color}22`, borderColor: `${r.color}88`,
+                       transform: `translateZ(1px) rotateZ(${r.rotation || 0}deg)`, zIndex: 1,
+                       clipPath: r.shape === 'L' ? 'polygon(0% 0%, 50% 0%, 50% 50%, 100% 50%, 100% 100%, 0% 100%)' :
+                                 r.shape === 'U' ? 'polygon(0% 0%, 30% 0%, 30% 70%, 70% 70%, 70% 0%, 100% 0%, 100% 100%, 0% 100%)' :
+                                 r.shape === 'T' ? 'polygon(0% 0%, 100% 0%, 100% 40%, 65% 40%, 65% 100%, 35% 100%, 35% 40%, 0% 40%)' : 'none',
+                     }}
+                     onPointerDown={(e) => {
+                       if (!isEditingLayout) return;
+                       e.stopPropagation(); // prevent drawing new room
+                       setSelectedRoomId(r.id);
+                       e.currentTarget.setPointerCapture(e.pointerId);
+                       
+                       const rect = e.currentTarget.parentNode.getBoundingClientRect();
+                       const x = (e.clientX - rect.left) / 0.95;
+                       const y = (e.clientY - rect.top) / 0.95;
+                       
+                       // Xác định các thiết bị nằm trong phòng này
+                       const devicesInRoom = floorDevices.filter(d => {
+                         const dx = d.settings?.x || 0;
+                         const dy = d.settings?.y || 0;
+                         return isPointInRotatedRect(dx, dy, r.left, r.top, r.width, r.height, r.rotation);
+                       }).map(d => ({ id: d.id, initX: d.settings?.x || 0, initY: d.settings?.y || 0 }));
+                       
+                       // Store initial click offset in percentage relative to the parent
+                       const initialLeft = r.left;
+                       const initialTop = r.top;
+                       
+                       // We can store dragging state in a local variable attached to the event target
+                       e.currentTarget.dataset.dragging = "true";
+                       e.currentTarget.dataset.startX = x;
+                       e.currentTarget.dataset.startY = y;
+                       e.currentTarget.dataset.initLeft = initialLeft;
+                       e.currentTarget.dataset.initTop = initialTop;
+                       e.currentTarget.dataset.dragDevices = JSON.stringify(devicesInRoom);
+                     }}
+                     onPointerMove={(e) => {
+                       if (e.currentTarget.dataset.dragging === "true") {
+                         const rect = e.currentTarget.parentNode.getBoundingClientRect();
+                         const x = (e.clientX - rect.left) / 0.95;
+                         const y = (e.clientY - rect.top) / 0.95;
+                         
+                         const deltaX = x - parseFloat(e.currentTarget.dataset.startX);
+                         const deltaY = y - parseFloat(e.currentTarget.dataset.startY);
+                         
+                         const deltaPercentX = (deltaX / currentFloorConfig.width) * 100;
+                         const deltaPercentY = (deltaY / currentFloorConfig.height) * 100;
+                         
+                         const newLeft = parseFloat(e.currentTarget.dataset.initLeft) + deltaPercentX;
+                         const newTop = parseFloat(e.currentTarget.dataset.initTop) + deltaPercentY;
+                         
+                         // Temporarily update style for smooth dragging without React re-render lag
+                         e.currentTarget.style.left = `${newLeft}%`;
+                         e.currentTarget.style.top = `${newTop}%`;
+                         e.currentTarget.dataset.currentLeft = newLeft;
+                         e.currentTarget.dataset.currentTop = newTop;
+                         
+                         // Move devices inside room
+                         const draggedDevices = JSON.parse(e.currentTarget.dataset.dragDevices || '[]');
+                         draggedDevices.forEach(d => {
+                           const el = document.getElementById(`device-node-${d.id}`);
+                           if (el) {
+                             el.style.left = `${d.initX + deltaPercentX}%`;
+                             el.style.top = `${d.initY + deltaPercentY}%`;
+                           }
+                         });
+                       }
+                     }}
+                     onPointerUp={async (e) => {
+                       if (e.currentTarget.dataset.dragging === "true") {
+                         e.currentTarget.dataset.dragging = "false";
+                         e.currentTarget.releasePointerCapture(e.pointerId);
+                         const newLeft = parseFloat(e.currentTarget.dataset.currentLeft);
+                         const newTop = parseFloat(e.currentTarget.dataset.currentTop);
+                         if (!isNaN(newLeft) && !isNaN(newTop)) {
+                           // Save devices
+                           const deltaPercentX = newLeft - parseFloat(e.currentTarget.dataset.initLeft);
+                           const deltaPercentY = newTop - parseFloat(e.currentTarget.dataset.initTop);
+                           const draggedDevices = JSON.parse(e.currentTarget.dataset.dragDevices || '[]');
+                           
+                           if (draggedDevices.length > 0) {
+                             setDevices(prev => prev.map(d => {
+                               const match = draggedDevices.find(x => x.id === d.id);
+                               if (match) {
+                                 const updatedSettings = { ...d.settings, x: match.initX + deltaPercentX, y: match.initY + deltaPercentY };
+                                 updateDevice(d.id, { settings: updatedSettings }).catch(console.error);
+                                 return { ...d, settings: updatedSettings };
+                               }
+                               return d;
+                             }));
+                           }
+
+                           const newConfig = { ...baseConfig };
+                           const rm = newConfig.rooms.find(x => x.id === r.id);
+                           if (rm) {
+                             rm.left = newLeft;
+                             rm.top = newTop;
+                             setBaseConfig(newConfig);
+                             await updateFloorPlanConfig(newConfig).catch(console.error);
+                             await reassignDevicesRoom(newConfig);
+                           }
+                         }
+                       }
+                     }}
+                     onPointerCancel={(e) => { e.currentTarget.dataset.dragging = "false"; }}
+                     onContextMenu={async (e) => {
+                       e.preventDefault();
+                       if (!isEditingLayout) return;
+                       if (confirm(`Bạn muốn xóa phòng ${r.name}?`)) {
+                          const newConfig = { ...baseConfig, rooms: baseConfig.rooms.filter(rm => rm.id !== r.id) };
+                          setBaseConfig(newConfig);
+                          await updateFloorPlanConfig(newConfig).catch(console.error);
+                          await reassignDevicesRoom(newConfig);
+                       }
+                     }}
+                >
+                  <span className="text-white/60 font-bold text-xs select-none pointer-events-none drop-shadow-md whitespace-nowrap bg-slate-900/40 px-2 py-0.5 rounded backdrop-blur-sm"
+                        style={{ transform: isEditingLayout ? 'none' : `rotateZ(${-rotationZ}deg) rotateX(-20deg)` }}>
+                    {r.name}
+                  </span>
+                </div>
+              ))}
+
+              {/* Selection Box */}
+              {isEditingLayout && selection && (
+                <div className="absolute border-2 border-cyan-400 bg-cyan-400/20 pointer-events-none"
+                     style={{
+                       left: Math.min(selection.startX, selection.currentX),
+                       top: Math.min(selection.startY, selection.currentY),
+                       width: Math.abs(selection.currentX - selection.startX),
+                       height: Math.abs(selection.currentY - selection.startY),
+                       transform: 'translateZ(2px)', zIndex: 100
+                     }}
+                />
+              )}
 
               {/* Tên tầng */}
               <div
@@ -536,7 +902,7 @@ export default function Simulation() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-slate-200 truncate">{d.name}</p>
-                    <p className="text-xs text-slate-500">{d.room}</p>
+                    <p className="text-xs text-slate-500">{!d.room || d.room === 'none' ? 'Chưa phân phòng' : d.room}</p>
                   </div>
                   <div className="flex flex-col items-end gap-1 flex-shrink-0">
                     <div

@@ -107,11 +107,41 @@ app.get('/api/users', async (req, res) => {
 // ── POST /api/users ─────────────────────────────────────────
 app.post('/api/users', async (req, res) => {
   try {
-    const { name, email, password, role_name } = req.body;
-    const role = await Role.findOne({ where: { name: role_name || 'staff' } });
+    const { name, email, password, role_name, assigned_floor, assigned_room } = req.body;
+    const role = await Role.findOne({ where: { name: role_name || 'manager' } });
     const hash = await bcrypt.hash(password, 12);
-    const user = await User.create({ name, email, password_hash: hash, role_id: role.id });
+    const user = await User.create({ name, email, password_hash: hash, role_id: role.id, assigned_floor, assigned_room });
     res.status(201).json({ id: user.id, name: user.name, email: user.email });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── PUT /api/users/:id ──────────────────────────────────────
+app.put('/api/users/:id', async (req, res) => {
+  try {
+    const { name, email, password, role_name, assigned_floor, assigned_room } = req.body;
+    const user = await User.findByPk(req.params.id);
+    if (!user) return res.status(404).json({ error: 'Not found' });
+    if (role_name) {
+      const role = await Role.findOne({ where: { name: role_name } });
+      if (role) user.role_id = role.id;
+    }
+    if (name) user.name = name;
+    if (email) user.email = email;
+    if (password) user.password_hash = await bcrypt.hash(password, 12);
+    user.assigned_floor = assigned_floor;
+    user.assigned_room = assigned_room;
+    await user.save();
+    res.json(user);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── DELETE /api/users/:id ───────────────────────────────────
+app.delete('/api/users/:id', async (req, res) => {
+  try {
+    const user = await User.findByPk(req.params.id);
+    if (!user) return res.status(404).json({ error: 'Not found' });
+    await user.destroy();
+    res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -127,47 +157,37 @@ async function start() {
 async function seed() {
   const roles = [
     { name: 'admin',   permissions: { devices: ['read','write','delete','control'], users: ['read','write','delete'], automation: ['read','write','delete'] } },
+    { name: 'director', permissions: { devices: ['read','write','control'], automation: ['read','write'] } },
     { name: 'manager', permissions: { devices: ['read','write','control'], automation: ['read','write'] } },
     { name: 'staff',   permissions: { devices: ['read','control'], automation: ['read'] } },
     { name: 'guest',   permissions: { devices: ['read'] } },
   ];
   for (const r of roles) await Role.findOrCreate({ where: { name: r.name }, defaults: r });
-  const adminRole = await Role.findOne({ where: { name: 'admin' } });
+  
   const hash = await bcrypt.hash('Admin@123', 12);
+
+  const adminRole = await Role.findOne({ where: { name: 'admin' } });
   const [admin] = await User.findOrCreate({
     where: { email: 'admin@smartoffice.vn' },
     defaults: { name: 'System Admin', email: 'admin@smartoffice.vn', password_hash: hash, role_id: adminRole.id },
   });
   await admin.update({ name: 'System Admin', role_id: adminRole.id });
+
+  const directorRole = await Role.findOne({ where: { name: 'director' } });
+  const [director] = await User.findOrCreate({
+    where: { email: 'director@smartoffice.vn' },
+    defaults: { name: 'Floor 1 Director', email: 'director@smartoffice.vn', password_hash: hash, role_id: directorRole.id, assigned_floor: 1 },
+  });
+  await director.update({ name: 'Floor 1 Director', role_id: directorRole.id, assigned_floor: 1, assigned_room: null });
   
   const managerRole = await Role.findOne({ where: { name: 'manager' } });
   const [manager] = await User.findOrCreate({
     where: { email: 'manager@smartoffice.vn' },
-    defaults: { name: 'Office Manager', email: 'manager@smartoffice.vn', password_hash: hash, role_id: managerRole.id },
+    defaults: { name: 'Office Manager', email: 'manager@smartoffice.vn', password_hash: hash, role_id: managerRole.id, assigned_room: 'Marketing' },
   });
-  await manager.update({ name: 'Office Manager', role_id: managerRole.id });
+  await manager.update({ name: 'Office Manager', role_id: managerRole.id, assigned_room: 'Marketing', assigned_floor: null });
 
-  const staffRole = await Role.findOne({ where: { name: 'staff' } });
-  const [staff301] = await User.findOrCreate({
-    where: { email: 'staff@smartoffice.vn' },
-    defaults: { name: 'Office Staff (Room 301)', email: 'staff@smartoffice.vn', password_hash: hash, role_id: staffRole.id, assigned_room: 'room301' },
-  });
-  await staff301.update({ name: 'Office Staff (Room 301)', assigned_room: 'room301', role_id: staffRole.id });
-
-  const [staff101] = await User.findOrCreate({
-    where: { email: 'staff101@smartoffice.vn' },
-    defaults: { name: 'Office Staff (Room 101)', email: 'staff101@smartoffice.vn', password_hash: hash, role_id: staffRole.id, assigned_room: 'room101' },
-  });
-  await staff101.update({ name: 'Office Staff (Room 101)', assigned_room: 'room101', role_id: staffRole.id });
-
-  const guestRole = await Role.findOne({ where: { name: 'guest' } });
-  const [guest] = await User.findOrCreate({
-    where: { email: 'guest@smartoffice.vn' },
-    defaults: { name: 'Guest User', email: 'guest@smartoffice.vn', password_hash: hash, role_id: guestRole.id },
-  });
-  await guest.update({ name: 'Guest User', role_id: guestRole.id });
-
-  console.log('[auth-service] Seed done — 4 accounts created with password Admin@123');
+  console.log('[auth-service] Seed done — 3 core accounts created with password Admin@123');
 }
 
 start().catch(console.error);
