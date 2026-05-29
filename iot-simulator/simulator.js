@@ -6,6 +6,7 @@
  *   node simulator.js --scenario temp-exceed   (Câu 3 - quan trọng nhất)
  *   node simulator.js --scenario door
  *   node simulator.js --scenario lights
+ *   node simulator.js --scenario camera-ai     (AI Camera phát hiện người)
  *   node simulator.js --scenario load
  *   node simulator.js --scenario all
  */
@@ -103,6 +104,48 @@ async function scenarioLoad() {
   console.log('✅ Load test: 100 messages sent (10 sensors × 10 rounds)')
 }
 
+// ════════════════════════════════════════════════════════════
+//  KỊCH BẢN 5 — AI Camera phát hiện người / vắng người
+// ════════════════════════════════════════════════════════════
+async function scenarioCameraAI() {
+  const TOPIC = 'office/1/lobby/camera'
+  console.log('\n📌 Kịch bản 5: AI Camera — Phát hiện người / Vắng người')
+  console.log('   Luồng: Camera → MQTT → Monitoring → RabbitMQ → Automation → Cooldown → Device OFF\n')
+
+  // Giai đoạn 1: Có người trong phòng
+  console.log('--- Giai đoạn 1: 👤 Camera phát hiện CÓ NGƯỜI ---')
+  for (let i = 0; i < 3; i++) {
+    pub(TOPIC, {
+      device_id: 'camera-lobby-01',
+      sensor_type: 'camera',
+      person_detected: true,
+      person_count: Math.floor(Math.random() * 3) + 1,
+      room: 'lobby',
+      floor: 1
+    })
+    await wait(3000)
+  }
+
+  // Giai đoạn 2: Người rời đi
+  console.log('\n--- Giai đoạn 2: 🚶 Người rời khỏi phòng — Camera báo VẮNG NGƯỜI ---')
+  for (let i = 0; i < 5; i++) {
+    pub(TOPIC, {
+      device_id: 'camera-lobby-01',
+      sensor_type: 'camera',
+      person_detected: false,
+      person_count: 0,
+      room: 'lobby',
+      floor: 1
+    })
+    console.log(`   ⏳ Cooldown đang đếm ngược... (${(i+1)*5}s)`)
+    await wait(5000)
+  }
+
+  // Giai đoạn 3: Kết quả
+  console.log('\n--- Giai đoạn 3: ✅ Hết cooldown — Hệ thống đã tự động TẮT thiết bị ---')
+  console.log('✅ Kịch bản 5 hoàn thành (~40 giây)')
+}
+
 // ── Start ─────────────────────────────────────────────────
 client.on('connect', async () => {
   console.log(`\n✅ Kết nối MQTT: ${BROKER}`)
@@ -112,6 +155,7 @@ client.on('connect', async () => {
     'temp-exceed': scenarioTempExceed,
     'door':        scenarioDoor,
     'lights':      scenarioLights,
+    'camera-ai':   scenarioCameraAI,
     'load':        scenarioLoad,
     'all': async () => {
       await scenarioTempExceed()
@@ -119,6 +163,8 @@ client.on('connect', async () => {
       await scenarioDoor()
       await wait(2000)
       await scenarioLights()
+      await wait(2000)
+      await scenarioCameraAI()
       await wait(2000)
       await scenarioLoad()
     },

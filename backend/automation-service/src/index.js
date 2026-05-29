@@ -45,6 +45,127 @@ const ExecLog = sequelize.define('ExecLog', {
   duration_ms:  DataTypes.INTEGER,
 }, { tableName: 'exec_logs' });
 
+// ── AI Camera Cooldown Tracker ──────────────────────────────
+// Lưu trạng thái đếm ngược cho từng camera { [device_id]: { lastSeen, timer, triggered } }
+const cameraTimers = {};
+
+async function handleCameraEvent(event) {
+  const { device_id, person_detected, room, floor } = event;
+  if (!device_id) return;
+
+  // 1. Nếu phát hiện CÓ NGƯỜI → reset timer, bật thiết bị nếu đã tắt
+  if (person_detected) {
+    if (cameraTimers[device_id]?.timer) {
+      clearTimeout(cameraTimers[device_id].timer);
+      console.log(`[AI-Camera] ${device_id}: Người quay lại — hủy cooldown`);
+    }
+    cameraTimers[device_id] = { lastSeen: Date.now(), timer: null, triggered: false };
+
+    // Bật lại thiết bị nếu trước đó đã tắt
+    try {
+      const config = await getCameraAIConfig(device_id);
+      if (config && config.person_detected && config.person_detected.length > 0) {
+        const devices = await getDevicesInRoom(room, config.person_detected);
+        for (const dev of devices) {
+          if (!dev.status) {
+            await controlDevice(dev.id, 'ON');
+            console.log(`[AI-Camera] BẬT ${dev.name} (${dev.type}) — có người quay lại`);
+          }
+        }
+      }
+    } catch (e) { /* ignore */ }
+    return;
+  }
+
+  // 2. Nếu KHÔNG CÓ NGƯỜI → bắt đầu đếm ngược cooldown
+  if (cameraTimers[device_id]?.triggered) return; // Đã xử lý rồi, chờ có người quay lại
+
+  // Lấy cấu hình AI từ device-service
+  const config = await getCameraAIConfig(device_id);
+  if (!config) {
+    console.log(`[AI-Camera] ${device_id}: Chưa có cấu hình AI, bỏ qua`);
+    return;
+  }
+
+  const cooldown = (config.cooldown_seconds || 120) * 1000;
+  const noPersonTypes = config.no_person || [];
+  if (noPersonTypes.length === 0) return;
+
+  // Reset timer cũ nếu có
+  if (cameraTimers[device_id]?.timer) {
+    clearTimeout(cameraTimers[device_id].timer);
+  }
+
+  console.log(`[AI-Camera] ${device_id}: Vắng người — bắt đầu cooldown ${cooldown/1000}s`);
+
+  cameraTimers[device_id] = {
+    lastSeen: Date.now(),
+    triggered: false,
+    timer: setTimeout(async () => {
+      console.log(`[AI-Camera] ${device_id}: ⏰ Hết cooldown — TẮT thiết bị [${noPersonTypes.join(', ')}]`);
+      cameraTimers[device_id].triggered = true;
+
+      // Tìm tất cả thiết bị có type nằm trong danh sách cần tắt
+      const devices = await getDevicesInRoom(room, noPersonTypes);
+      for (const dev of devices) {
+        if (dev.status) { // Chỉ tắt thiết bị đang bật
+          await controlDevice(dev.id, 'OFF');
+          console.log(`[AI-Camera] TẮT ${dev.name} (${dev.type})`);
+        }
+      }
+
+      // Gửi thông báo
+      try {
+        await axios.post(`${NOTIF_URL}/api/notifications/send`, {
+          type: 'ai_camera',
+          message: `📷 Camera sảnh không phát hiện người trong ${cooldown/1000}s — Đã tự động tắt: ${noPersonTypes.join(', ')}`,
+          context: { camera_id: device_id, room }
+        }, { headers: { 'x-internal-service': 'automation-service' }, timeout: 5000 });
+      } catch (e) { console.error('[AI-Camera] Notify failed:', e.message); }
+    }, cooldown)
+  };
+}
+
+async function getCameraAIConfig(deviceId) {
+  try {
+    const r = await axios.get(`${DEVICE_URL}/api/devices`, {
+      headers: { 'x-internal-service': 'automation-service' },
+      timeout: 5000
+    });
+    const camera = r.data.find(d => d.type === 'camera');
+    if (camera && camera.settings && camera.settings.ai_triggers) {
+      return camera.settings.ai_triggers;
+    }
+  } catch (e) {
+    console.error('[AI-Camera] Fetch config failed:', e.message);
+  }
+  return null;
+}
+
+async function getDevicesInRoom(room, types) {
+  try {
+    const r = await axios.get(`${DEVICE_URL}/api/devices`, {
+      headers: { 'x-internal-service': 'automation-service' },
+      timeout: 5000
+    });
+    return r.data.filter(d => types.includes(d.type));
+  } catch (e) {
+    console.error('[AI-Camera] Fetch devices failed:', e.message);
+    return [];
+  }
+}
+
+async function controlDevice(deviceId, command) {
+  try {
+    await axios.post(`${DEVICE_URL}/api/devices/${deviceId}/control`,
+      { command, params: {} },
+      { headers: { 'x-internal-service': 'automation-service' }, timeout: 5000 }
+    );
+  } catch (e) {
+    console.error(`[AI-Camera] Control ${deviceId} failed:`, e.message);
+  }
+}
+
 // ── RabbitMQ ────────────────────────────────────────────────
 let channel;
 async function connectRabbit() {
@@ -54,15 +175,21 @@ async function connectRabbit() {
   const q = await channel.assertQueue('automation_queue', { durable: true });
   await channel.bindQueue(q.queue, EXCHANGE, 'sensor.alert');
   await channel.bindQueue(q.queue, EXCHANGE, 'sensor.data');
-  console.log('[automation-service] RabbitMQ connected');
+  await channel.bindQueue(q.queue, EXCHANGE, 'sensor.events');
+  console.log('[automation-service] RabbitMQ connected & bound to exchange');
 
-  // ── Step 4 (Câu 3): Subscribe sensor.alert ─────────────
+  // ── Step 4 (Câu 3): Subscribe sensor.alert & sensor.events ─────────────
   channel.consume(q.queue, async (msg) => {
     if (!msg) return;
     try {
       const event = JSON.parse(msg.content.toString());
       const key   = msg.fields.routingKey;
-      if (key === 'sensor.alert') await processSensorAlert(event);
+      if (key === 'sensor.alert') {
+        await processSensorAlert(event);
+      } else if (key === 'sensor.events' && event.sensor_type === 'camera') {
+        console.log('[automation] Received camera event:', event.device_id, 'person_detected:', event.person_detected);
+        await handleCameraEvent(event);
+      }
       channel.ack(msg);
     } catch (e) {
       console.error('[automation] Consumer error:', e.message);

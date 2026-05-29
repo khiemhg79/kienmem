@@ -74,6 +74,27 @@ def on_mqtt_message(client, userdata, msg):
         room        = parts[2]  if len(parts) >= 3 else 'unknown'
         floor       = parts[1]  if len(parts) >= 2 else '0'
         device_id   = payload.get('device_id', 'unknown')
+
+        # ── Camera AI event — chuyển thẳng lên RabbitMQ, không ghi InfluxDB ──
+        if sensor_type == 'camera' or payload.get('sensor_type') == 'camera':
+            person_detected = payload.get('person_detected', False)
+            person_count    = payload.get('person_count', 0)
+            camera_event = {
+                'device_id':       device_id,
+                'sensor_type':     'camera',
+                'person_detected': person_detected,
+                'person_count':    person_count,
+                'room':            room,
+                'floor':           floor,
+                'service':         'monitoring-service',
+            }
+            log.info(f'📷 Camera event: person_detected={person_detected} count={person_count} [{room}]')
+            if main_loop and main_loop.is_running():
+                asyncio.run_coroutine_threadsafe(
+                    publish_alert('sensor.events', camera_event), main_loop
+                )
+            return
+
         value       = float(payload.get('value', 0))
         unit        = payload.get('unit', '')
 

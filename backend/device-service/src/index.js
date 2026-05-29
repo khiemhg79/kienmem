@@ -173,12 +173,17 @@ async function seed() {
     { name: 'Đèn phòng 302',  type: 'light',  room: 'room302', floor: 3, status: false, mqtt_topic: 'office/3/room302/light/cmd',  group_id: g1.id },
     { name: 'Điều hòa 301',   type: 'ac',     room: 'room301', floor: 3, status: false, mqtt_topic: 'office/3/room301/ac/cmd',     group_id: g1.id, settings: { target_temp: 24 } },
     { name: 'Điều hòa 302',   type: 'ac',     room: 'room302', floor: 3, status: false, mqtt_topic: 'office/3/room302/ac/cmd',     group_id: g1.id, settings: { target_temp: 24 } },
-    { name: 'Camera sảnh',    type: 'camera', room: 'lobby',   floor: 1, status: true,  mqtt_topic: 'office/1/lobby/camera/cmd',  group_id: g2.id },
+    { name: 'Camera sảnh',    type: 'camera', room: 'lobby',   floor: 1, status: true,  mqtt_topic: 'office/1/lobby/camera/cmd',  group_id: g2.id, settings: { ai_triggers: { cooldown_seconds: 15, person_detected: ['light'], no_person: ['light', 'ac'] } } },
     { name: 'Cửa chính',      type: 'door',   room: 'entrance',floor: 1, status: false, mqtt_topic: 'office/1/entrance/door/cmd', group_id: g2.id },
     { name: 'Cảm biến nhiệt 301', type: 'sensor', room: 'room301', floor: 3, status: true, mqtt_topic: 'office/3/room301/temperature', group_id: g1.id },
   ];
-  for (const item of list) await Device.findOrCreate({ where: { name: item.name }, defaults: item });
-  console.log('[device-service] Seed done');
+  for (const item of list) {
+    const [d, created] = await Device.findOrCreate({ where: { name: item.name }, defaults: item });
+    if (!created && item.settings && Object.keys(item.settings).length > 0) {
+      await d.update({ settings: item.settings });
+    }
+  }
+  console.log('[device-service] Seed done & settings synced');
 }
 
 async function start() {
