@@ -1,15 +1,15 @@
 require('dotenv').config();
 const express = require('express');
-const cors    = require('cors');
-const helmet  = require('helmet');
-const morgan  = require('morgan');
+const cors = require('cors');
+const helmet = require('helmet');
+const morgan = require('morgan');
 const { sequelize, User, Role, RefreshToken } = require('./db');
-const jwt     = require('jsonwebtoken');
-const bcrypt  = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs');
 const { createClient } = require('redis');
 const rateLimit = require('express-rate-limit');
 
-const app  = express();
+const app = express();
 const PORT = process.env.PORT || 3001;
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret';
 
@@ -19,7 +19,7 @@ app.use(helmet()); app.use(cors()); app.use(morgan('tiny')); app.use(express.jso
 const redis = createClient({ url: process.env.REDIS_URL || 'redis://localhost:6379' });
 redis.connect().catch(e => console.error('Redis:', e.message));
 
-const loginLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 10 });
+const loginLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 100 });
 
 // ── POST /api/auth/login ────────────────────────────────────
 app.post('/api/auth/login', loginLimiter, async (req, res) => {
@@ -38,10 +38,10 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
       role: user.Role.name, permissions: user.Role.permissions,
       assigned_room: user.assigned_room
     };
-    const accessToken  = jwt.sign(payload, JWT_SECRET, { expiresIn: '15m' });
+    const accessToken = jwt.sign(payload, JWT_SECRET, { expiresIn: '15m' });
     const refreshToken = jwt.sign({ sub: user.id }, JWT_SECRET, { expiresIn: '7d' });
     const hash = await bcrypt.hash(refreshToken, 8);
-    await RefreshToken.create({ user_id: user.id, token_hash: hash, expires_at: new Date(Date.now() + 7*24*3600*1000) });
+    await RefreshToken.create({ user_id: user.id, token_hash: hash, expires_at: new Date(Date.now() + 7 * 24 * 3600 * 1000) });
     await user.update({ last_login: new Date() });
 
     res.json({ accessToken, refreshToken, user: { id: user.id, name: user.name, email: user.email, role: user.Role.name, assigned_room: user.assigned_room } });
@@ -60,7 +60,7 @@ app.post('/api/auth/refresh', async (req, res) => {
     await matched.update({ revoked: true });
     const user = await User.findByPk(p.sub, { include: [Role] });
     const payload = { sub: user.id, email: user.email, role: user.Role.name, permissions: user.Role.permissions, assigned_room: user.assigned_room };
-    const newAccess  = jwt.sign(payload, JWT_SECRET, { expiresIn: '15m' });
+    const newAccess = jwt.sign(payload, JWT_SECRET, { expiresIn: '15m' });
     const newRefresh = jwt.sign({ sub: user.id }, JWT_SECRET, { expiresIn: '7d' });
     res.json({ accessToken: newAccess, refreshToken: newRefresh });
   } catch (e) { res.status(401).json({ error: 'Invalid token' }); }
@@ -81,7 +81,7 @@ app.post('/api/auth/verify', async (req, res) => {
 app.post('/api/auth/logout', async (req, res) => {
   try {
     const token = req.headers.authorization?.slice(7);
-    if (token) { const p = jwt.decode(token); if (p?.jti) await redis.setEx(`blacklist:${p.jti}`, 900, '1').catch(() => {}); }
+    if (token) { const p = jwt.decode(token); if (p?.jti) await redis.setEx(`blacklist:${p.jti}`, 900, '1').catch(() => { }); }
     res.json({ message: 'Đăng xuất thành công' });
   } catch (e) { res.json({ message: 'OK' }); }
 });
@@ -156,14 +156,14 @@ async function start() {
 
 async function seed() {
   const roles = [
-    { name: 'admin',   permissions: { devices: ['read','write','delete','control'], users: ['read','write','delete'], automation: ['read','write','delete'] } },
-    { name: 'director', permissions: { devices: ['read','write','control'], automation: ['read','write'] } },
-    { name: 'manager', permissions: { devices: ['read','write','control'], automation: ['read','write'] } },
-    { name: 'staff',   permissions: { devices: ['read','control'], automation: ['read'] } },
-    { name: 'guest',   permissions: { devices: ['read'] } },
+    { name: 'admin', permissions: { devices: ['read', 'write', 'delete', 'control'], users: ['read', 'write', 'delete'], automation: ['read', 'write', 'delete'] } },
+    { name: 'director', permissions: { devices: ['read', 'write', 'control'], automation: ['read', 'write'] } },
+    { name: 'manager', permissions: { devices: ['read', 'write', 'control'], automation: ['read', 'write'] } },
+    { name: 'staff', permissions: { devices: ['read', 'control'], automation: ['read'] } },
+    { name: 'guest', permissions: { devices: ['read'] } },
   ];
   for (const r of roles) await Role.findOrCreate({ where: { name: r.name }, defaults: r });
-  
+
   const hash = await bcrypt.hash('Admin@123', 12);
 
   const adminRole = await Role.findOne({ where: { name: 'admin' } });
@@ -179,7 +179,7 @@ async function seed() {
     defaults: { name: 'Floor 1 Director', email: 'director@smartoffice.vn', password_hash: hash, role_id: directorRole.id, assigned_floor: 1 },
   });
   await director.update({ name: 'Floor 1 Director', role_id: directorRole.id, assigned_floor: 1, assigned_room: null });
-  
+
   const managerRole = await Role.findOne({ where: { name: 'manager' } });
   const [manager] = await User.findOrCreate({
     where: { email: 'manager@smartoffice.vn' },
