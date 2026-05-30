@@ -1,6 +1,9 @@
 import axios from 'axios'
 
-const api = axios.create({ baseURL: '/api', timeout: 10000 })
+const api = axios.create({
+  baseURL: import.meta.env.VITE_API_GATEWAY_URL || '/api',
+  timeout: 10000
+})
 
 // Flag để tránh nhiều request cùng refresh một lúc
 let isRefreshing = false
@@ -76,47 +79,47 @@ api.interceptors.response.use(
 )
 
 // ── Auth ─────────────────────────────────────────
-export const login  = (email, password) => api.post('/auth/login', { email, password })
-export const logout = ()                 => api.post('/auth/logout')
-export const getMe  = ()                 => api.get('/auth/me')
+export const login = (email, password) => api.post('/auth/login', { email, password })
+export const logout = () => api.post('/auth/logout')
+export const getMe = () => api.get('/auth/me')
 
 // ── Users ────────────────────────────────────────
-export const getUsers   = ()         => api.get('/users')
-export const createUser = (data)     => api.post('/users', data)
+export const getUsers = () => api.get('/users')
+export const createUser = (data) => api.post('/users', data)
 export const updateUser = (id, data) => api.put(`/users/${id}`, data)
-export const deleteUser = (id)       => api.delete(`/users/${id}`)
+export const deleteUser = (id) => api.delete(`/users/${id}`)
 
 // ── Devices ──────────────────────────────────────
-export const getDevices     = ()         => api.get('/devices')
-export const getDevice      = (id)       => api.get(`/devices/${id}`)
-export const createDevice   = (data)     => api.post('/devices', data)
-export const updateDevice   = (id, data) => api.put(`/devices/${id}`, data)
-export const deleteDevice   = (id)       => api.delete(`/devices/${id}`)
-export const controlDevice  = (id, cmd)  => api.post(`/devices/${id}/control`, cmd)
+export const getDevices = () => api.get('/devices')
+export const getDevice = (id) => api.get(`/devices/${id}`)
+export const createDevice = (data) => api.post('/devices', data)
+export const updateDevice = (id, data) => api.put(`/devices/${id}`, data)
+export const deleteDevice = (id) => api.delete(`/devices/${id}`)
+export const controlDevice = (id, cmd) => api.post(`/devices/${id}/control`, cmd)
 
 // ── Automations ───────────────────────────────────
-export const getRules    = ()         => api.get('/automations')
-export const createRule  = (data)     => api.post('/automations', data)
-export const updateRule  = (id, data) => api.put(`/automations/${id}`, data)
-export const deleteRule  = (id)       => api.delete(`/automations/${id}`)
-export const triggerRule = (id)       => api.post(`/automations/${id}/trigger`)
-export const getRuleLogs = (id)       => api.get(`/automations/${id}/logs`)
+export const getRules = () => api.get('/automations')
+export const createRule = (data) => api.post('/automations', data)
+export const updateRule = (id, data) => api.put(`/automations/${id}`, data)
+export const deleteRule = (id) => api.delete(`/automations/${id}`)
+export const triggerRule = (id) => api.post(`/automations/${id}/trigger`)
+export const getRuleLogs = (id) => api.get(`/automations/${id}/logs`)
 
 // ── Sensors ───────────────────────────────────────
-export const getLatestSensors = (room)        => api.get('/sensors/latest', { params: { room } })
+export const getLatestSensors = (room) => api.get('/sensors/latest', { params: { room } })
 export const getSensorHistory = (room, hours) => api.get('/sensors/history', { params: { room, hours } })
-export const getSimulationConfig    = ()      => api.get('/sensors/simulation')
-export const updateSimulationConfig = (data)  => api.post('/sensors/simulation', data)
+export const getSimulationConfig = () => api.get('/sensors/simulation')
+export const updateSimulationConfig = (data) => api.post('/sensors/simulation', data)
 
-export const getFloorPlanConfig     = ()      => api.get('/notifications/settings/floor-plan')
-export const updateFloorPlanConfig  = (data)  => api.put('/notifications/settings/floor-plan', data)
+export const getFloorPlanConfig = () => api.get('/notifications/settings/floor-plan')
+export const updateFloorPlanConfig = (data) => api.put('/notifications/settings/floor-plan', data)
 
 // ── Notifications ────────────────────────────────
-export const getNotifications     = () => api.get('/notifications')
-export const getUnreadCount       = () => api.get('/notifications/unread-count')
-export const markRead             = (id) => api.post(`/notifications/${id}/read`)
-export const markAllRead          = ()   => api.post('/notifications/read-all')
-export const getEmailSetting      = () => api.get('/notifications/settings')
-export const updateEmailSetting   = (data) => api.put('/notifications/settings', data)
+export const getNotifications = () => api.get('/notifications')
+export const getUnreadCount = () => api.get('/notifications/unread-count')
+export const markRead = (id) => api.post(`/notifications/${id}/read`)
+export const markAllRead = () => api.post('/notifications/read-all')
+export const getEmailSetting = () => api.get('/notifications/settings')
+export const updateEmailSetting = (data) => api.put('/notifications/settings', data)
 
 export default api
