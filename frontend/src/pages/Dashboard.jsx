@@ -262,7 +262,7 @@ export default function Dashboard() {
           <div className="flex items-center justify-between mb-3">
             <span className="text-sm text-gray-500">Nhiệt độ phòng</span>
             <div className="flex items-center gap-1.5">
-              {selectedRoom === 'room301' && canEditSim && (
+              {canEditSim && (
                 <button
                   onClick={() => setShowSimConfig(!showSimConfig)}
                   className={`p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors ${showSimConfig ? "bg-gray-100 text-gray-600" : ""}`}
