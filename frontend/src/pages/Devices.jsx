@@ -427,93 +427,233 @@ export default function Devices() {
       )}
 
       {/* AI Config Modal */}
-      {aiModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 overflow-hidden">
-            <h2 className="text-lg font-bold text-gray-900 mb-1">
-              Cấu hình Sự kiện AI Camera
-            </h2>
-            <p className="text-xs text-gray-500 mb-4">
-              Thiết lập hành động tự động khi Camera **{aiDevice?.name}** phát hiện/vắng người.
-            </p>
+      {aiModal && (() => {
+        const controllable = devices.filter(d => d.type !== 'camera' && d.type !== 'sensor');
+        const sameRoom = controllable.filter(d => d.room === aiDevice?.room);
+        const otherRoom = controllable.filter(d => d.room !== aiDevice?.room);
 
-            <div className="space-y-4">
-              {/* Person Detected Settings */}
-              <div className="p-4 bg-purple-50/50 border border-purple-100 rounded-xl space-y-2">
-                <span className="text-xs font-bold text-purple-800 block">🟢 KHI PHÁT HIỆN CÓ NGƯỜI (BẬT)</span>
-                <div className="flex gap-4">
-                  {[['💡 Đèn', 'light'], ['🚪 Cửa', 'door'], ['❄️ Điều hòa', 'ac']].map(([label, type]) => {
-                    const active = aiForm.person_detected?.includes(type)
-                    return (
-                      <label key={type} className="flex items-center gap-1.5 text-xs text-gray-700 cursor-pointer">
-                        <input 
-                          type="checkbox" 
-                          checked={active}
-                          onChange={() => toggleTriggerType('person_detected', type)}
-                          className="rounded text-purple-600 focus:ring-purple-500 h-4 w-4"
-                        />
-                        {label}
-                      </label>
-                    )
-                  })}
+        return (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xl p-6 overflow-hidden flex flex-col max-h-[90vh]">
+              <h2 className="text-lg font-bold text-gray-900 mb-1">
+                Cấu hình Sự kiện AI Camera
+              </h2>
+              <p className="text-xs text-gray-500 mb-4">
+                Thiết lập hành động tự động khi Camera <strong>{aiDevice?.name}</strong> phát hiện hoặc vắng người.
+              </p>
+
+              <div className="space-y-4 overflow-y-auto flex-1 pr-1">
+                {/* Person Detected Settings */}
+                <div className="p-4 bg-purple-50/50 border border-purple-100 rounded-xl space-y-3">
+                  <span className="text-xs font-bold text-purple-800 block">🟢 KHI PHÁT HIỆN CÓ NGƯỜI (BẬT)</span>
+                  
+                  {/* Quick Select Types */}
+                  <div>
+                    <span className="text-[10px] font-semibold text-purple-600 block mb-1">Chọn nhanh theo nhóm thiết bị:</span>
+                    <div className="flex gap-4">
+                      {[['💡 Tất cả Đèn', 'light'], ['🚪 Tất cả Cửa', 'door'], ['❄️ Tất cả Điều hòa', 'ac']].map(([label, type]) => {
+                        const active = aiForm.person_detected?.includes(type)
+                        return (
+                          <label key={type} className="flex items-center gap-1.5 text-xs text-gray-700 cursor-pointer">
+                            <input 
+                              type="checkbox" 
+                              checked={active}
+                              onChange={() => toggleTriggerType('person_detected', type)}
+                              className="rounded text-purple-600 focus:ring-purple-500 h-4 w-4"
+                            />
+                            {label}
+                          </label>
+                        )
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Detailed Devices Select */}
+                  <div className="border-t border-purple-100/70 pt-2">
+                    <span className="text-[10px] font-semibold text-purple-700 block mb-1.5">Chọn chi tiết từng thiết bị:</span>
+                    
+                    {/* Same Room List */}
+                    <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                      {sameRoom.length === 0 ? (
+                        <p className="text-[10px] text-gray-400 italic">Không có thiết bị controllable nào trong phòng này.</p>
+                      ) : (
+                        sameRoom.map(d => {
+                          const active = aiForm.person_detected?.includes(d.id)
+                          return (
+                            <label key={d.id} className="flex items-center justify-between text-xs text-gray-700 bg-white hover:bg-purple-50 p-2 rounded-lg border border-gray-150 cursor-pointer transition-colors">
+                              <span className="flex items-center gap-1.5">
+                                <span>{ICONS[d.type]}</span>
+                                <span className="font-semibold">{d.name}</span>
+                                <span className="text-[10px] text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">Cùng phòng</span>
+                              </span>
+                              <input 
+                                type="checkbox" 
+                                checked={active}
+                                onChange={() => toggleTriggerType('person_detected', d.id)}
+                                className="rounded text-purple-600 focus:ring-purple-500 h-4 w-4"
+                              />
+                            </label>
+                          )
+                        })
+                      )}
+                    </div>
+
+                    {/* Other Rooms List Accordion */}
+                    {otherRoom.length > 0 && (
+                      <details className="mt-2 text-xs">
+                        <summary className="cursor-pointer text-gray-500 hover:text-gray-700 select-none font-semibold text-[10px] flex items-center gap-1">
+                          📁 Xem thiết bị ở phòng khác / tầng khác ({otherRoom.length})
+                        </summary>
+                        <div className="space-y-1.5 mt-2 pl-1 max-h-32 overflow-y-auto pr-1">
+                          {otherRoom.map(d => {
+                            const active = aiForm.person_detected?.includes(d.id)
+                            return (
+                              <label key={d.id} className="flex items-center justify-between text-xs text-gray-600 bg-white hover:bg-purple-50/50 p-2 rounded-lg border border-gray-100 cursor-pointer transition-colors">
+                                <span className="flex items-center gap-1.5">
+                                  <span>{ICONS[d.type]}</span>
+                                  <span>{d.name}</span>
+                                  <span className="text-[9px] text-gray-400 bg-gray-50 px-1 py-0.5 rounded">
+                                    {!d.room || d.room === 'none' ? `Tầng ${d.floor}` : `${d.room} (Tầng ${d.floor})`}
+                                  </span>
+                                </span>
+                                <input 
+                                  type="checkbox" 
+                                  checked={active}
+                                  onChange={() => toggleTriggerType('person_detected', d.id)}
+                                  className="rounded text-purple-600 focus:ring-purple-500 h-3.5 w-3.5"
+                                />
+                              </label>
+                            )
+                          })}
+                        </div>
+                      </details>
+                    )}
+                  </div>
+                </div>
+
+                {/* No Person Settings */}
+                <div className="p-4 bg-gray-50 border border-gray-150 rounded-xl space-y-3">
+                  <span className="text-xs font-bold text-gray-800 block">🔴 KHI KHÔNG CÓ NGƯỜI (TẮT)</span>
+                  
+                  {/* Quick Select Types */}
+                  <div>
+                    <span className="text-[10px] font-semibold text-gray-500 block mb-1">Chọn nhanh theo nhóm thiết bị:</span>
+                    <div className="flex gap-4">
+                      {[['💡 Tất cả Đèn', 'light'], ['🚪 Tất cả Cửa', 'door'], ['❄️ Tất cả Điều hòa', 'ac']].map(([label, type]) => {
+                        const active = aiForm.no_person?.includes(type)
+                        return (
+                          <label key={type} className="flex items-center gap-1.5 text-xs text-gray-700 cursor-pointer">
+                            <input 
+                              type="checkbox" 
+                              checked={active}
+                              onChange={() => toggleTriggerType('no_person', type)}
+                              className="rounded text-gray-600 focus:ring-gray-500 h-4 w-4"
+                            />
+                            {label}
+                          </label>
+                        )
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Detailed Devices Select */}
+                  <div className="border-t border-gray-250 pt-2">
+                    <span className="text-[10px] font-semibold text-gray-600 block mb-1.5">Chọn chi tiết từng thiết bị:</span>
+                    
+                    {/* Same Room List */}
+                    <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                      {sameRoom.length === 0 ? (
+                        <p className="text-[10px] text-gray-400 italic">Không có thiết bị controllable nào trong phòng này.</p>
+                      ) : (
+                        sameRoom.map(d => {
+                          const active = aiForm.no_person?.includes(d.id)
+                          return (
+                            <label key={d.id} className="flex items-center justify-between text-xs text-gray-700 bg-white hover:bg-gray-100 p-2 rounded-lg border border-gray-150 cursor-pointer transition-colors">
+                              <span className="flex items-center gap-1.5">
+                                <span>{ICONS[d.type]}</span>
+                                <span className="font-semibold">{d.name}</span>
+                                <span className="text-[10px] text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">Cùng phòng</span>
+                              </span>
+                              <input 
+                                type="checkbox" 
+                                checked={active}
+                                onChange={() => toggleTriggerType('no_person', d.id)}
+                                className="rounded text-gray-650 focus:ring-gray-500 h-4 w-4"
+                              />
+                            </label>
+                          )
+                        })
+                      )}
+                    </div>
+
+                    {/* Other Rooms List Accordion */}
+                    {otherRoom.length > 0 && (
+                      <details className="mt-2 text-xs">
+                        <summary className="cursor-pointer text-gray-500 hover:text-gray-700 select-none font-semibold text-[10px] flex items-center gap-1">
+                          📁 Xem thiết bị ở phòng khác / tầng khác ({otherRoom.length})
+                        </summary>
+                        <div className="space-y-1.5 mt-2 pl-1 max-h-32 overflow-y-auto pr-1">
+                          {otherRoom.map(d => {
+                            const active = aiForm.no_person?.includes(d.id)
+                            return (
+                              <label key={d.id} className="flex items-center justify-between text-xs text-gray-650 bg-white hover:bg-gray-100 p-2 rounded-lg border border-gray-100 cursor-pointer transition-colors">
+                                <span className="flex items-center gap-1.5">
+                                  <span>{ICONS[d.type]}</span>
+                                  <span>{d.name}</span>
+                                  <span className="text-[9px] text-gray-400 bg-gray-50 px-1 py-0.5 rounded">
+                                    {!d.room || d.room === 'none' ? `Tầng ${d.floor}` : `${d.room} (Tầng ${d.floor})`}
+                                  </span>
+                                </span>
+                                <input 
+                                  type="checkbox" 
+                                  checked={active}
+                                  onChange={() => toggleTriggerType('no_person', d.id)}
+                                  className="rounded text-gray-600 focus:ring-gray-500 h-3.5 w-3.5"
+                                />
+                              </label>
+                            )
+                          })}
+                        </div>
+                      </details>
+                    )}
+                  </div>
+                </div>
+
+                {/* Cooldown Settings */}
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 mb-1">THỜI GIAN CHỜ TẮT (GIÂY)</label>
+                  <input 
+                    type="number"
+                    min="5"
+                    max="600"
+                    value={aiForm.cooldown_seconds}
+                    onChange={e => setAiForm(prev => ({ ...prev, cooldown_seconds: e.target.value }))}
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <span className="text-[10px] text-gray-400 mt-1 block">Thời gian vắng người liên tục trước khi tự động tắt các thiết bị đã chọn.</span>
                 </div>
               </div>
 
-              {/* No Person Settings */}
-              <div className="p-4 bg-gray-50 border border-gray-150 rounded-xl space-y-2">
-                <span className="text-xs font-bold text-gray-800 block">🔴 KHI KHÔNG CÓ NGƯỜI (TẮT)</span>
-                <div className="flex gap-4">
-                  {[['💡 Đèn', 'light'], ['🚪 Cửa', 'door'], ['❄️ Điều hòa', 'ac']].map(([label, type]) => {
-                    const active = aiForm.no_person?.includes(type)
-                    return (
-                      <label key={type} className="flex items-center gap-1.5 text-xs text-gray-700 cursor-pointer">
-                        <input 
-                          type="checkbox" 
-                          checked={active}
-                          onChange={() => toggleTriggerType('no_person', type)}
-                          className="rounded text-gray-600 focus:ring-gray-500 h-4 w-4"
-                        />
-                        {label}
-                      </label>
-                    )
-                  })}
-                </div>
+              <div className="flex gap-3 mt-6">
+                <button 
+                  onClick={() => setAiModal(false)} 
+                  className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
+                >
+                  Hủy
+                </button>
+                <button 
+                  onClick={handleSaveAiConfig} 
+                  disabled={saving || !aiForm.cooldown_seconds}
+                  className="flex-1 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 disabled:opacity-60 flex items-center justify-center gap-2 transition-colors"
+                >
+                  {saving && <Loader2 className="w-4 h-4 animate-spin" />}
+                  Lưu cấu hình
+                </button>
               </div>
-
-              {/* Cooldown Settings */}
-              <div>
-                <label className="block text-xs font-semibold text-gray-500 mb-1">THỜI GIAN CHỜ TẮT (GIÂY)</label>
-                <input 
-                  type="number"
-                  min="5"
-                  max="600"
-                  value={aiForm.cooldown_seconds}
-                  onChange={e => setAiForm(prev => ({ ...prev, cooldown_seconds: e.target.value }))}
-                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                <span className="text-[10px] text-gray-400 mt-1 block">Thời gian vắng người liên tục trước khi tự động tắt các thiết bị đã chọn.</span>
-              </div>
-            </div>
-
-            <div className="flex gap-3 mt-6">
-              <button 
-                onClick={() => setAiModal(false)} 
-                className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
-              >
-                Hủy
-              </button>
-              <button 
-                onClick={handleSaveAiConfig} 
-                disabled={saving || !aiForm.cooldown_seconds}
-                className="flex-1 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 disabled:opacity-60 flex items-center justify-center gap-2 transition-colors"
-              >
-                {saving && <Loader2 className="w-4 h-4 animate-spin" />}
-                Lưu cấu hình
-              </button>
             </div>
           </div>
-        </div>
-      )}
+        )
+      })()}
     </div>
   )
 }

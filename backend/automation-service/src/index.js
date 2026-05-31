@@ -106,23 +106,26 @@ async function handleCameraEvent(event) {
     lastSeen: Date.now(),
     triggered: false,
     timer: setTimeout(async () => {
-      console.log(`[AI-Camera] ${device_id}: ⏰ Hết cooldown — TẮT thiết bị [${noPersonTypes.join(', ')}]`);
-      cameraTimers[device_id].triggered = true;
-
-      // Tìm tất cả thiết bị có type nằm trong danh sách cần tắt
+      // Tìm tất cả thiết bị có type hoặc ID nằm trong danh sách cần tắt
       const devices = await getDevicesInRoom(room, noPersonTypes);
+      const turnedOffNames = [];
       for (const dev of devices) {
         if (dev.status) { // Chỉ tắt thiết bị đang bật
           await controlDevice(dev.id, 'OFF');
+          turnedOffNames.push(dev.name);
           console.log(`[AI-Camera] TẮT ${dev.name} (${dev.type})`);
         }
       }
 
+      console.log(`[AI-Camera] ${device_id}: ⏰ Hết cooldown — TẮT thiết bị [${noPersonTypes.join(', ')}]`);
+      cameraTimers[device_id].triggered = true;
+
       // Gửi thông báo
       try {
+        const offListStr = turnedOffNames.length > 0 ? turnedOffNames.join(', ') : 'Không';
         await axios.post(`${NOTIF_URL}/api/notifications/send`, {
           type: 'ai_camera',
-          message: `📷 Camera sảnh không phát hiện người trong ${cooldown/1000}s — Đã tự động tắt: ${noPersonTypes.join(', ')}`,
+          message: `📷 Camera không phát hiện người trong ${cooldown/1000}s — Đã tự động tắt: ${offListStr}`,
           context: { camera_id: device_id, room }
         }, { headers: { 'x-internal-service': 'automation-service' }, timeout: 5000 });
       } catch (e) { console.error('[AI-Camera] Notify failed:', e.message); }
@@ -152,7 +155,7 @@ async function getDevicesInRoom(room, types) {
       headers: { 'x-internal-service': 'automation-service' },
       timeout: 5000
     });
-    return r.data.filter(d => types.includes(d.type));
+    return r.data.filter(d => types.includes(d.type) || types.includes(d.id));
   } catch (e) {
     console.error('[AI-Camera] Fetch devices failed:', e.message);
     return [];
