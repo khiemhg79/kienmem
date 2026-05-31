@@ -55,6 +55,6 @@ Dự án đi kèm một công cụ giả lập (`iot-simulator`) hỗ trợ các
 
 ## 5. Hướng dẫn vận hành nhanh
 1.  **Khởi chạy hệ thống:** `docker-compose up --build`
-2.  **Truy cập UI:** `http://localhost:5173`
+2.  **Truy cập UI:** `https://kienmem-iz5ixp9r7-khiemhg79s-projects.vercel.app/`
 3.  **Tài khoản Admin:** `admin@smartoffice.vn` / `Admin@123`
 4.  **Chạy giả lập:** `node simulator.js --scenario temp-exceed` (trong thư mục `iot-simulator`)

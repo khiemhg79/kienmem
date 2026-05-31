@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Plus, Pencil, Trash2, Power, RefreshCw, Loader2, Settings } from 'lucide-react'
-import { createDevice, updateDevice, deleteDevice } from '../services/api'
+import { createDevice, updateDevice, deleteDevice, getFloorPlanConfig } from '../services/api'
 import { useDeviceStore } from '../store/deviceStore.jsx'
 
 const TYPES  = ['light','ac','camera','door','sensor','projector','printer','tv','router']
@@ -12,6 +12,20 @@ const INIT = { name:'', type:'light', room:'none', floor:1, ip_address:'', mqtt_
 export default function Devices() {
   const { devices, loading, toggling, toggleDevice, refreshDevices } = useDeviceStore()
   const user = JSON.parse(localStorage.getItem('user') || '{}')
+  const [resolvedRoomName, setResolvedRoomName] = useState(user.assigned_room)
+
+  useEffect(() => {
+    if (user.assigned_room && /^\d+$/.test(user.assigned_room)) {
+      getFloorPlanConfig().then(res => {
+        const config = res.data || {}
+        const room = config.rooms?.find(r => r.id === user.assigned_room)
+        if (room) {
+          setResolvedRoomName(room.name)
+        }
+      }).catch(console.error)
+    }
+  }, [user.assigned_room])
+
   const canControl = ['admin', 'manager', 'staff'].includes(user.role)
   const canEdit    = ['admin', 'manager'].includes(user.role)
   const canDelete  = user.role === 'admin'
@@ -181,7 +195,7 @@ export default function Devices() {
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {filtered.map(d => {
             const isStaff = user.role === 'staff';
-            const staffCanControl = !isStaff || (isStaff && user.assigned_room && user.assigned_room.toLowerCase() === (d.room || '').toLowerCase());
+            const staffCanControl = !isStaff || (isStaff && resolvedRoomName && resolvedRoomName.toLowerCase() === (d.room || '').toLowerCase());
             const deviceCanControl = canControl && staffCanControl;
 
             return (

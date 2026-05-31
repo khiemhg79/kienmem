@@ -183,11 +183,18 @@ async function seed() {
   const managerRole = await Role.findOne({ where: { name: 'manager' } });
   const [manager] = await User.findOrCreate({
     where: { email: 'manager@smartoffice.vn' },
-    defaults: { name: 'Office Manager', email: 'manager@smartoffice.vn', password_hash: hash, role_id: managerRole.id, assigned_room: 'Marketing' },
+    defaults: { name: 'Office Manager', email: 'manager@smartoffice.vn', password_hash: hash, role_id: managerRole.id, assigned_room: '1780061195691' },
   });
-  await manager.update({ name: 'Office Manager', role_id: managerRole.id, assigned_room: 'Marketing', assigned_floor: null });
+  await manager.update({ name: 'Office Manager', role_id: managerRole.id, assigned_room: '1780061195691', assigned_floor: null });
 
-  console.log('[auth-service] Seed done — 3 core accounts created with password Admin@123');
+  const staffRole = await Role.findOne({ where: { name: 'staff' } });
+  const [staff] = await User.findOrCreate({
+    where: { email: 'staff@smartoffice.vn' },
+    defaults: { name: 'Office Staff (Room 301)', email: 'staff@smartoffice.vn', password_hash: hash, role_id: staffRole.id, assigned_room: 'room301' },
+  });
+  await staff.update({ name: 'Office Staff (Room 301)', role_id: staffRole.id, assigned_room: 'room301', assigned_floor: null });
+
+  console.log('[auth-service] Seed done — 4 core accounts created with password Admin@123');
 }
 
 start().catch(console.error);

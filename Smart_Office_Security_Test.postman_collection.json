@@ -1,0 +1,569 @@
+{
+  "info": {
+    "_postman_id": "8c5b6b19-e938-4e8c-8f1d-c917b2b8d6be",
+    "name": "Smart Office Security Verification",
+    "description": "Bộ API kiểm thử và chứng minh các tính năng bảo mật (RBAC Lớp 2, HTTPS/TLS, JWT Auth) của hệ thống Smart Office.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1. Health Check (HTTPS - Port 443)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "https://localhost:443/health",
+          "protocol": "https",
+          "host": [
+            "localhost"
+          ],
+          "port": "443",
+          "path": [
+            "health"
+          ]
+        },
+        "description": "Kiểm tra Gateway hoạt động qua cổng HTTPS (443) có TLS bật."
+      },
+      "response": []
+    },
+    {
+      "name": "2. Đăng nhập Admin (Lấy Token)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "var jsonData = pm.response.json();",
+              "if (jsonData.accessToken) {",
+              "    pm.collectionVariables.set(\"adminToken\", jsonData.accessToken);",
+              "    pm.collectionVariables.set(\"userId\", jsonData.user.id);",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"email\": \"admin@smartoffice.vn\",\n    \"password\": \"Admin@123\"\n}"
+        },
+        "url": {
+          "raw": "https://localhost:443/api/auth/login",
+          "protocol": "https",
+          "host": [
+            "localhost"
+          ],
+          "port": "443",
+          "path": [
+            "api",
+            "auth",
+            "login"
+          ]
+        },
+        "description": "Đăng nhập với vai trò Admin (có toàn quyền)."
+      },
+      "response": []
+    },
+    {
+      "name": "3. Đăng nhập Manager (Lấy Token)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "var jsonData = pm.response.json();",
+              "if (jsonData.accessToken) {",
+              "    pm.collectionVariables.set(\"managerToken\", jsonData.accessToken);",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"email\": \"manager@smartoffice.vn\",\n    \"password\": \"Admin@123\"\n}"
+        },
+        "url": {
+          "raw": "https://localhost:443/api/auth/login",
+          "protocol": "https",
+          "host": [
+            "localhost"
+          ],
+          "port": "443",
+          "path": [
+            "api",
+            "auth",
+            "login"
+          ]
+        },
+        "description": "Đăng nhập với vai trò Manager (Phòng Marketing)."
+      },
+      "response": []
+    },
+    {
+      "name": "4. Đăng nhập Guest (Lấy Token)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "var jsonData = pm.response.json();",
+              "if (jsonData.accessToken) {",
+              "    pm.collectionVariables.set(\"guestToken\", jsonData.accessToken);",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"email\": \"guest@test.vn\",\n    \"password\": \"Guest@123\"\n}"
+        },
+        "url": {
+          "raw": "https://localhost:443/api/auth/login",
+          "protocol": "https",
+          "host": [
+            "localhost"
+          ],
+          "port": "443",
+          "path": [
+            "api",
+            "auth",
+            "login"
+          ]
+        },
+        "description": "Đăng nhập với vai trò Guest (Chỉ xem, không điều khiển)."
+      },
+      "response": []
+    },
+    {
+      "name": "5. Đăng nhập Staff (Lấy Token)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "var jsonData = pm.response.json();",
+              "if (jsonData.accessToken) {",
+              "    pm.collectionVariables.set(\"staffToken\", jsonData.accessToken);",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"email\": \"staff@smartoffice.vn\",\n    \"password\": \"Admin@123\"\n}"
+        },
+        "url": {
+          "raw": "https://localhost:443/api/auth/login",
+          "protocol": "https",
+          "host": [
+            "localhost"
+          ],
+          "port": "443",
+          "path": [
+            "api",
+            "auth",
+            "login"
+          ]
+        },
+        "description": "Đăng nhập với vai trò Staff (Được phân quyền Phòng room301)."
+      },
+      "response": []
+    },
+    {
+      "name": "6. Lấy danh sách thiết bị - Admin",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "var jsonData = pm.response.json();",
+              "if (jsonData.length > 0) {",
+              "    // Tìm thiết bị thuộc Phòng họp (Tầng 1)",
+              "    var meetingDevice = jsonData.find(function(d) { return d.room === 'Phòng họp'; });",
+              "    if (meetingDevice) {",
+              "        pm.collectionVariables.set(\"meetingRoomDeviceId\", meetingDevice.id);",
+              "    }",
+              "    // Tìm thiết bị thuộc Phòng room301 (Tầng 3)",
+              "    var r301Device = jsonData.find(function(d) { return d.room === 'room301'; });",
+              "    if (r301Device) {",
+              "        pm.collectionVariables.set(\"room301DeviceId\", r301Device.id);",
+              "    }",
+              "    // Tìm thiết bị thuộc Phòng nhân sự (Tầng 3)",
+              "    var hrDevice = jsonData.find(function(d) { return d.room === 'Phòng nhân sự'; });",
+              "    if (hrDevice) {",
+              "        pm.collectionVariables.set(\"hrRoomDeviceId\", hrDevice.id);",
+              "    }",
+              "    pm.collectionVariables.set(\"deviceId\", jsonData[0].id);",
+              "    pm.collectionVariables.set(\"deviceRoom\", jsonData[0].room);",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{adminToken}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "https://localhost:443/api/devices",
+          "protocol": "https",
+          "host": [
+            "localhost"
+          ],
+          "port": "443",
+          "path": [
+            "api",
+            "devices"
+          ]
+        },
+        "description": "Admin xem được toàn bộ danh sách thiết bị trong hệ thống."
+      },
+      "response": []
+    },
+    {
+      "name": "7. Lấy danh sách thiết bị - Manager (Chỉ phòng Marketing)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{managerToken}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "https://localhost:443/api/devices",
+          "protocol": "https",
+          "host": [
+            "localhost"
+          ],
+          "port": "443",
+          "path": [
+            "api",
+            "devices"
+          ]
+        },
+        "description": "Manager phòng Marketing chỉ thấy được thiết bị thuộc phòng Marketing."
+      },
+      "response": []
+    },
+    {
+      "name": "8. Admin điều khiển thiết bị (Thành công)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{adminToken}}",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"command\": \"ON\"\n}"
+        },
+        "url": {
+          "raw": "https://localhost:443/api/devices/{{deviceId}}/control",
+          "protocol": "https",
+          "host": [
+            "localhost"
+          ],
+          "port": "443",
+          "path": [
+            "api",
+            "devices",
+            "{{deviceId}}",
+            "control"
+          ]
+        },
+        "description": "Admin có quyền điều khiển mọi thiết bị."
+      },
+      "response": []
+    },
+    {
+      "name": "9. Manager điều khiển thiết bị phòng khác (Bị chặn 403)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{managerToken}}",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"command\": \"OFF\"\n}"
+        },
+        "url": {
+          "raw": "https://localhost:443/api/devices/{{deviceId}}/control",
+          "protocol": "https",
+          "host": [
+            "localhost"
+          ],
+          "port": "443",
+          "path": [
+            "api",
+            "devices",
+            "{{deviceId}}",
+            "control"
+          ]
+        },
+        "description": "Thử nghiệm Manager phòng Marketing cố tình điều khiển thiết bị của phòng khác (ví dụ: Phòng họp). Hệ thống sẽ chặn với mã lỗi 403 Forbidden."
+      },
+      "response": []
+    },
+    {
+      "name": "10. Guest điều khiển thiết bị (Bị chặn 403)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{guestToken}}",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"command\": \"ON\"\n}"
+        },
+        "url": {
+          "raw": "https://localhost:443/api/devices/{{deviceId}}/control",
+          "protocol": "https",
+          "host": [
+            "localhost"
+          ],
+          "port": "443",
+          "path": [
+            "api",
+            "devices",
+            "{{deviceId}}",
+            "control"
+          ]
+        },
+        "description": "Vai trò Guest chỉ được đọc, không có quyền điều khiển bất kỳ thiết bị nào."
+      },
+      "response": []
+    },
+    {
+      "name": "11. Staff điều khiển thiết bị phòng room301 (Thành công - Tầng 3)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{staffToken}}",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"command\": \"ON\"\n}"
+        },
+        "url": {
+          "raw": "https://localhost:443/api/devices/{{room301DeviceId}}/control",
+          "protocol": "https",
+          "host": [
+            "localhost"
+          ],
+          "port": "443",
+          "path": [
+            "api",
+            "devices",
+            "{{room301DeviceId}}",
+            "control"
+          ]
+        },
+        "description": "Staff được gán phòng 'room301' điều khiển thiết bị thuộc phòng 'room301' thành công."
+      },
+      "response": []
+    },
+    {
+      "name": "12. Staff điều khiển thiết bị Phòng họp (Bị chặn 403 - Tầng 1)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{staffToken}}",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"command\": \"ON\"\n}"
+        },
+        "url": {
+          "raw": "https://localhost:443/api/devices/{{meetingRoomDeviceId}}/control",
+          "protocol": "https",
+          "host": [
+            "localhost"
+          ],
+          "port": "443",
+          "path": [
+            "api",
+            "devices",
+            "{{meetingRoomDeviceId}}",
+            "control"
+          ]
+        },
+        "description": "Staff phòng 'room301' cố gắng điều khiển thiết bị phòng họp (tầng 1) -> Bị hệ thống chặn với mã lỗi 403."
+      },
+      "response": []
+    },
+    {
+      "name": "13. Staff điều khiển thiết bị Phòng nhân sự (Bị chặn 403 - Tầng 3 phòng khác)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{staffToken}}",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"command\": \"ON\"\n}"
+        },
+        "url": {
+          "raw": "https://localhost:443/api/devices/{{hrRoomDeviceId}}/control",
+          "protocol": "https",
+          "host": [
+            "localhost"
+          ],
+          "port": "443",
+          "path": [
+            "api",
+            "devices",
+            "{{hrRoomDeviceId}}",
+            "control"
+          ]
+        },
+        "description": "Staff phòng 'room301' cố gắng điều khiển thiết bị phòng nhân sự (cùng tầng 3 nhưng khác phòng) -> Bị hệ thống chặn với mã lỗi 403."
+      },
+      "response": []
+    }
+  ],
+  "variable": [
+    {
+      "key": "adminToken",
+      "value": ""
+    },
+    {
+      "key": "managerToken",
+      "value": ""
+    },
+    {
+      "key": "guestToken",
+      "value": ""
+    },
+    {
+      "key": "staffToken",
+      "value": ""
+    },
+    {
+      "key": "deviceId",
+      "value": ""
+    },
+    {
+      "key": "room301DeviceId",
+      "value": ""
+    },
+    {
+      "key": "meetingRoomDeviceId",
+      "value": ""
+    },
+    {
+      "key": "hrRoomDeviceId",
+      "value": ""
+    },
+    {
+      "key": "deviceRoom",
+      "value": ""
+    },
+    {
+      "key": "userId",
+      "value": ""
+    }
+  ]
+}

@@ -16,7 +16,7 @@ cd smart-office-final
 docker-compose up -d --build
 
 # Lần đầu build ~5 phút. Sau đó:
-# - Frontend:       http://localhost:5173
+# - Frontend (Vercel): https://kienmem-iz5ixp9r7-khiemhg79s-projects.vercel.app/
 # - API Gateway:    http://localhost:3000
 # - RabbitMQ UI:    http://localhost:15672  (souser/sopassword)
 # - InfluxDB UI:    http://localhost:8086   (admin/influxpassword)

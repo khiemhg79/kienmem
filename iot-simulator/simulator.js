@@ -14,13 +14,20 @@ const mqtt      = require('mqtt')
 const { program } = require('commander')
 
 program.option('--scenario <name>', 'Kịch bản: temp-exceed|door|lights|load|all', 'temp-exceed')
-program.option('--host <host>', 'MQTT host', 'localhost')
-program.option('--port <port>', 'MQTT port', '1883')
+program.option('--host <host>', 'MQTT host', process.env.MQTT_HOST || 'localhost')
+program.option('--port <port>', 'MQTT port', process.env.MQTT_PORT || '1883')
+program.option('--user <user>', 'MQTT username', process.env.MQTT_USER || 'simulator')
+program.option('--pass <pass>', 'MQTT password', process.env.MQTT_PASS || 'simpassword')
 program.parse()
 
 const opts   = program.opts()
 const BROKER = `mqtt://${opts.host}:${opts.port}`
-const client = mqtt.connect(BROKER, { clientId: `simulator-${Date.now()}`, reconnectPeriod: 3000 })
+const client = mqtt.connect(BROKER, {
+  clientId: `simulator-${Date.now()}`,
+  reconnectPeriod: 3000,
+  username: opts.user,
+  password: opts.pass,
+})
 
 function pub(topic, payload) {
   const msg = JSON.stringify({ ...payload, timestamp: new Date().toISOString(), simulator: true })

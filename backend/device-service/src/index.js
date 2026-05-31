@@ -54,13 +54,18 @@ const CommandLog = sequelize.define('CommandLog', {
 DeviceGroup.hasMany(Device, { foreignKey: 'group_id' });
 Device.belongsTo(DeviceGroup, { foreignKey: 'group_id' });
 
-// ── MQTT ────────────────────────────────────────────────────
+// ── MQTT (có xác thực — đối phó nguy cơ 4.1.3) ─────────────
 let mqttClient;
 function connectMqtt() {
   const host = process.env.MQTT_HOST || 'localhost';
   const port = process.env.MQTT_PORT || 1883;
-  mqttClient = mqtt.connect(`mqtt://${host}:${port}`, { clientId: `device-service-${Date.now()}`, reconnectPeriod: 3000 });
-  mqttClient.on('connect', () => console.log('[device-service] MQTT connected'));
+  mqttClient = mqtt.connect(`mqtt://${host}:${port}`, {
+    clientId: `device-service-${Date.now()}`,
+    reconnectPeriod: 3000,
+    username: process.env.MQTT_USER || 'souser',
+    password: process.env.MQTT_PASS || 'sopassword',
+  });
+  mqttClient.on('connect', () => console.log('[device-service] MQTT connected (authenticated)'));
   mqttClient.on('error',   e  => console.error('[device-service] MQTT error:', e.message));
 }
 
@@ -89,17 +94,115 @@ function auth(req, res, next) {
   catch { res.status(401).json({ error: 'Invalid token' }); }
 }
 
+// Helper to resolve room ID to room name from floor plan config
+async function resolveRoomName(roomIdOrName, token) {
+  if (!roomIdOrName) return roomIdOrName;
+  if (/^\d+$/.test(roomIdOrName)) {
+    try {
+      const url = process.env.NOTIFICATION_SERVICE_URL || 'http://notification-service:3005';
+      const res = await fetch(`${url}/api/notifications/settings/floor-plan`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'x-internal-service': 'true'
+        }
+      });
+      if (res.ok) {
+        const config = await res.json();
+        const room = config.rooms?.find(r => r.id === roomIdOrName);
+        if (room) return room.name;
+      }
+    } catch (e) {
+      console.error('[device-service] resolveRoomName error:', e.message);
+    }
+  }
+  return roomIdOrName;
+}
+
+// ── RBAC middleware — Lớp 2: kiểm tra quyền theo role + assigned_room/floor ──
+// Đối phó nguy cơ 4.1.1: chống leo thang đặc quyền (Privilege Escalation)
+function rbacCheck(action) {
+  return async (req, res, next) => {
+    // Internal service calls (automation) bypass RBAC
+    if (req.headers['x-internal-service']) return next();
+
+    const user = req.user;
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
+    const role = user.role;
+    const permissions = user.permissions || {};
+    const devicePerms = permissions.devices || [];
+
+    // Kiểm tra permission theo action (read, write, delete, control)
+    if (!devicePerms.includes(action)) {
+      return res.status(403).json({
+        error: `Forbidden: Vai trò "${role}" không có quyền "${action}" thiết bị`
+      });
+    }
+
+    // Với action control/write/delete, kiểm tra thêm phạm vi theo room/floor
+    if (['control', 'write', 'delete'].includes(action) && req.params.id) {
+      const device = await Device.findByPk(req.params.id);
+      if (!device) return res.status(404).json({ error: 'Không tìm thấy thiết bị' });
+
+      // Admin → toàn quyền, không cần kiểm tra phạm vi
+      if (role === 'admin') { req.device = device; return next(); }
+
+      // Director → chỉ được thao tác thiết bị trên tầng mình quản lý
+      if (role === 'director') {
+        const assignedFloor = user.assigned_floor;
+        if (assignedFloor && device.floor !== assignedFloor) {
+          return res.status(403).json({
+            error: `Forbidden: Director chỉ quản lý tầng ${assignedFloor}, không thể ${action} thiết bị tầng ${device.floor}`
+          });
+        }
+      }
+
+      // Manager / Staff → chỉ được thao tác thiết bị trong phòng mình
+      if (role === 'manager' || role === 'staff') {
+        const assignedRoomIdOrName = user.assigned_room;
+        const authHeader = req.headers.authorization;
+        const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : '';
+        const assignedRoom = await resolveRoomName(assignedRoomIdOrName, token);
+
+        if (assignedRoom && device.room?.toLowerCase() !== assignedRoom.toLowerCase()) {
+          return res.status(403).json({
+            error: `Forbidden: ${role} phòng "${assignedRoom}" không thể ${action} thiết bị phòng "${device.room}"`
+          });
+        }
+      }
+
+      req.device = device;
+    }
+
+    next();
+  };
+}
+
 // ── Routes ──────────────────────────────────────────────────
-// GET /api/devices
-app.get('/api/devices', auth, async (req, res) => {
+// GET /api/devices — đọc danh sách (mọi role có quyền read đều xem được)
+app.get('/api/devices', auth, rbacCheck('read'), async (req, res) => {
   try {
-    const devices = await Device.findAll({ include: [DeviceGroup], order: [['floor','ASC'],['room','ASC']] });
+    const user = req.user;
+    let where = {};
+
+    // Lọc thiết bị theo phạm vi quản lý của user
+    if (user && user.role === 'director' && user.assigned_floor) {
+      where.floor = user.assigned_floor;
+    } else if (user && (user.role === 'manager' || user.role === 'staff') && user.assigned_room) {
+      const authHeader = req.headers.authorization;
+      const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : '';
+      const resolvedRoomName = await resolveRoomName(user.assigned_room, token);
+      where.room = resolvedRoomName;
+    }
+    // admin và guest xem tất cả
+
+    const devices = await Device.findAll({ where, include: [DeviceGroup], order: [['floor','ASC'],['room','ASC']] });
     res.json(devices);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // GET /api/devices/:id
-app.get('/api/devices/:id', auth, async (req, res) => {
+app.get('/api/devices/:id', auth, rbacCheck('read'), async (req, res) => {
   try {
     const d = await Device.findByPk(req.params.id, { include: [DeviceGroup] });
     if (!d) return res.status(404).json({ error: 'Không tìm thấy thiết bị' });
@@ -107,8 +210,8 @@ app.get('/api/devices/:id', auth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// POST /api/devices
-app.post('/api/devices', auth, async (req, res) => {
+// POST /api/devices — chỉ role có quyền 'write' mới tạo được
+app.post('/api/devices', auth, rbacCheck('write'), async (req, res) => {
   try {
     const d = await Device.create(req.body);
     publishEvent('device.created', { device_id: d.id, name: d.name });
@@ -116,10 +219,10 @@ app.post('/api/devices', auth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// PUT /api/devices/:id
-app.put('/api/devices/:id', auth, async (req, res) => {
+// PUT /api/devices/:id — chỉ role có quyền 'write' + đúng phạm vi
+app.put('/api/devices/:id', auth, rbacCheck('write'), async (req, res) => {
   try {
-    const d = await Device.findByPk(req.params.id);
+    const d = req.device || await Device.findByPk(req.params.id);
     if (!d) return res.status(404).json({ error: 'Không tìm thấy thiết bị' });
     await d.update(req.body);
     publishEvent('device.updated', { device_id: d.id });
@@ -127,10 +230,10 @@ app.put('/api/devices/:id', auth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// DELETE /api/devices/:id
-app.delete('/api/devices/:id', auth, async (req, res) => {
+// DELETE /api/devices/:id — chỉ role có quyền 'delete' + đúng phạm vi
+app.delete('/api/devices/:id', auth, rbacCheck('delete'), async (req, res) => {
   try {
-    const d = await Device.findByPk(req.params.id);
+    const d = req.device || await Device.findByPk(req.params.id);
     if (!d) return res.status(404).json({ error: 'Không tìm thấy thiết bị' });
     await d.destroy();
     publishEvent('device.deleted', { device_id: req.params.id });
@@ -138,10 +241,11 @@ app.delete('/api/devices/:id', auth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// POST /api/devices/:id/control  — Câu 3: Step 5-6
-app.post('/api/devices/:id/control', auth, async (req, res) => {
+// POST /api/devices/:id/control  — Câu 3: Step 5-6 + RBAC Lớp 2
+// Kiểm tra assigned_room trước khi cho phép điều khiển (đối phó nguy cơ 4.1.1)
+app.post('/api/devices/:id/control', auth, rbacCheck('control'), async (req, res) => {
   try {
-    const d = await Device.findByPk(req.params.id);
+    const d = req.device || await Device.findByPk(req.params.id);
     if (!d) return res.status(404).json({ error: 'Không tìm thấy thiết bị' });
     const { command, ...params } = req.body;
     const topic = d.mqtt_topic || `office/${d.floor}/${d.room}/${d.type}/command`;
