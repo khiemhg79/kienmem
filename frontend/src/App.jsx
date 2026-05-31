@@ -8,11 +8,44 @@ import Simulation    from './pages/Simulation'
 import EmailSettings from './pages/EmailSettings'
 import Report        from './pages/Report'
 import Accounts      from './pages/Accounts'
+import Logs          from './pages/Logs'
 import Layout        from './components/Layout'
 import { CameraAIProvider } from './components/CameraAIProvider'
 import { DeviceProvider }   from './store/deviceStore'
 
+function checkAndApplyUrlToken() {
+  try {
+    const params = new URLSearchParams(window.location.search)
+    const token = params.get('token')
+    if (token) {
+      const base64Url = token.split('.')[1]
+      const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/')
+      const jsonPayload = decodeURIComponent(atob(base64).split('').map(function(c) {
+          return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)
+      }).join(''))
+      const payload = JSON.parse(jsonPayload)
+      
+      if (payload && payload.email) {
+        localStorage.setItem('accessToken', token)
+        localStorage.setItem('refreshToken', 'url-token-dummy')
+        localStorage.setItem('user', JSON.stringify({
+          id: payload.sub,
+          name: payload.name || payload.email.split('@')[0],
+          email: payload.email,
+          role: payload.role,
+          assigned_room: payload.assigned_room
+        }))
+        // Clear token from URL without reloading
+        window.history.replaceState({}, document.title, window.location.pathname)
+      }
+    }
+  } catch (e) {
+    console.error('Failed to parse URL token:', e)
+  }
+}
+
 function PrivateRoute({ children }) {
+  checkAndApplyUrlToken()
   const token = localStorage.getItem('accessToken')
   const user  = localStorage.getItem('user')
   if (!token || !user) {
@@ -42,6 +75,7 @@ export default function App() {
           <Route path="email-settings" element={<EmailSettings />} />
           <Route path="report"        element={<Report />} />
           <Route path="accounts"      element={<Accounts />} />
+          <Route path="logs"          element={<Logs />} />
         </Route>
       </Routes>
     </BrowserRouter>

@@ -194,7 +194,22 @@ async function seed() {
   });
   await staff.update({ name: 'Office Staff (Room 301)', role_id: staffRole.id, assigned_room: 'room301', assigned_floor: null });
 
-  console.log('[auth-service] Seed done — 4 core accounts created with password Admin@123');
+  // Test accounts for room301 email routing
+  const testEmails = [
+    { name: 'Duy Quang (HVNH)', email: '26a4040725@hvnh.edu.vn' },
+    { name: 'Quang Duy Nguyễn', email: 'nquangduy2005@gmail.com' },
+    { name: 'Khiêm Hoàng Giang', email: 'khiemhg0709@gmail.com' },
+    { name: 'Sơn Quý Hoa', email: 'hoasonquy@gmail.com' }
+  ];
+  for (const item of testEmails) {
+    const [u] = await User.findOrCreate({
+      where: { email: item.email },
+      defaults: { name: item.name, email: item.email, password_hash: hash, role_id: staffRole.id, assigned_room: 'room301' }
+    });
+    await u.update({ name: item.name, role_id: staffRole.id, assigned_room: 'room301', assigned_floor: null });
+  }
+
+  console.log('[auth-service] Seed done — core and test accounts created/updated with password Admin@123');
 }
 
 start().catch(console.error);

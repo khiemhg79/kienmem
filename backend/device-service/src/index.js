@@ -201,6 +201,14 @@ app.get('/api/devices', auth, rbacCheck('read'), async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// GET /api/devices/logs
+app.get('/api/devices/logs', auth, async (req, res) => {
+  try {
+    const logs = await CommandLog.findAll({ order: [['createdAt','DESC']], limit: 100 });
+    res.json(logs);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // GET /api/devices/:id
 app.get('/api/devices/:id', auth, rbacCheck('read'), async (req, res) => {
   try {
@@ -258,13 +266,7 @@ app.post('/api/devices/:id/control', auth, rbacCheck('control'), async (req, res
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// GET /api/devices/logs
-app.get('/api/devices/logs', auth, async (req, res) => {
-  try {
-    const logs = await CommandLog.findAll({ order: [['createdAt','DESC']], limit: 100 });
-    res.json(logs);
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
+
 
 app.get('/health', (req, res) => res.json({ status: 'ok', service: 'device-service' }));
 

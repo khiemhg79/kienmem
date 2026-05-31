@@ -96,6 +96,7 @@ export const createDevice = (data) => api.post('/devices', data)
 export const updateDevice = (id, data) => api.put(`/devices/${id}`, data)
 export const deleteDevice = (id) => api.delete(`/devices/${id}`)
 export const controlDevice = (id, cmd) => api.post(`/devices/${id}/control`, cmd)
+export const getDeviceLogs = () => api.get('/devices/logs')
 
 // ── Automations ───────────────────────────────────
 export const getRules = () => api.get('/automations')
@@ -104,6 +105,7 @@ export const updateRule = (id, data) => api.put(`/automations/${id}`, data)
 export const deleteRule = (id) => api.delete(`/automations/${id}`)
 export const triggerRule = (id) => api.post(`/automations/${id}/trigger`)
 export const getRuleLogs = (id) => api.get(`/automations/${id}/logs`)
+export const getExecLogs = () => api.get('/automations/exec-logs')
 
 // ── Sensors ───────────────────────────────────────
 export const getLatestSensors = (room) => api.get('/sensors/latest', { params: { room } })
@@ -121,5 +123,7 @@ export const markRead = (id) => api.post(`/notifications/${id}/read`)
 export const markAllRead = () => api.post('/notifications/read-all')
 export const getEmailSetting = () => api.get('/notifications/settings')
 export const updateEmailSetting = (data) => api.put('/notifications/settings', data)
+export const getRoomEmailSettings = () => api.get('/notifications/settings/rooms')
+export const updateRoomEmailSettings = (data) => api.put('/notifications/settings/rooms', data)
 
 export default api

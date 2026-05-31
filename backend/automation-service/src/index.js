@@ -45,6 +45,10 @@ const ExecLog = sequelize.define('ExecLog', {
   duration_ms:  DataTypes.INTEGER,
 }, { tableName: 'exec_logs' });
 
+Rule.hasMany(ExecLog, { foreignKey: 'rule_id', as: 'logs' });
+ExecLog.belongsTo(Rule, { foreignKey: 'rule_id', as: 'rule' });
+
+
 // ── AI Camera Cooldown Tracker ──────────────────────────────
 // Lưu trạng thái đếm ngược cho từng camera { [device_id]: { lastSeen, timer, triggered } }
 const cameraTimers = {};
@@ -298,6 +302,17 @@ app.delete('/api/automations/:id', auth, async (req, res) => {
     const r = await Rule.findByPk(req.params.id);
     if (!r) return res.status(404).json({ error: 'Rule not found' });
     await r.destroy(); res.json({ message: 'Đã xóa' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/automations/exec-logs', auth, async (req, res) => {
+  try {
+    const logs = await ExecLog.findAll({
+      include: [{ model: Rule, as: 'rule', attributes: ['name'] }],
+      order: [['createdAt', 'DESC']],
+      limit: 100
+    });
+    res.json(logs);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

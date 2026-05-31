@@ -1,5 +1,5 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, Cpu, Zap, Bell, LogOut, Building2, Box, Mail, FileText, Users } from 'lucide-react'
+import { LayoutDashboard, Cpu, Zap, Bell, LogOut, Building2, Box, Mail, FileText, Users, Terminal } from 'lucide-react'
 import { logout } from '../services/api'
 import { useState, useEffect } from 'react'
 import { getUnreadCount } from '../services/api'
@@ -12,6 +12,7 @@ const NAV = [
   { to: '/notifications', icon: Bell,            label: 'Thông báo',     roles: ['admin', 'manager', 'director', 'staff', 'guest'] },
   { to: '/accounts',      icon: Users,           label: 'Tài khoản',     roles: ['admin'] },
   { to: '/email-settings',icon: Mail,            label: 'Cấu hình Email',roles: ['admin'] },
+  { to: '/logs',          icon: Terminal,        label: 'Nhật ký hệ thống',roles: ['admin', 'manager', 'director'] },
   { to: '/report',        icon: FileText,        label: 'Báo cáo',       roles: ['admin', 'manager', 'director'] },
 ]
 

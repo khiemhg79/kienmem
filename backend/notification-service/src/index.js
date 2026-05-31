@@ -57,33 +57,116 @@ async function getNotifyEmail() {
   return process.env.NOTIFY_EMAIL || '';
 }
 
-async function sendEmail(subject, message, type) {
-  const notifyEmail = await getNotifyEmail();
-  if (!mailer || !notifyEmail) return;
-  const isAlert = type === 'sensor_alert' || type === 'automation_alert';
+async function getRoomEmails(room) {
+  if (!room) return null;
   try {
-    await mailer.sendMail({
-      from: `"Smart Office IT03A" <${process.env.GMAIL_USER}>`,
-      to: notifyEmail,
-      subject,
-      html: `
-        <div style="font-family:sans-serif;max-width:500px;margin:0 auto;padding:20px">
-          <div style="background:${isAlert ? '#fef2f2' : '#eff6ff'};border-left:4px solid ${isAlert ? '#ef4444' : '#3b82f6'};border-radius:8px;padding:20px">
-            <h2 style="margin:0 0 12px;color:${isAlert ? '#dc2626' : '#2563eb'}">
-              ${isAlert ? '⚠️ Cảnh báo Smart Office' : '✅ Smart Office Thông báo'}
-            </h2>
-            <p style="margin:0;color:#374151;font-size:16px">${message}</p>
-            <hr style="margin:16px 0;border:none;border-top:1px solid #e5e7eb">
-            <p style="margin:0;color:#9ca3af;font-size:12px">
-              🕐 ${new Date().toLocaleString('vi-VN')} &nbsp;·&nbsp; Smart Office IT03A-2511
-            </p>
-          </div>
-        </div>
-      `,
-    });
-    console.log(`[Gmail] ✓ Sent to ${notifyEmail}`);
+    const setting = await SystemSetting.findByPk('ROOM_EMAIL_SETTINGS');
+    if (setting) {
+      const mapping = JSON.parse(setting.value);
+      
+      // 1. Direct match
+      if (mapping[room] && Array.isArray(mapping[room]) && mapping[room].length > 0) {
+        return mapping[room].join(', ');
+      }
+      
+      // 2. Resolve room name/number (e.g. "room301") to configured room ID (e.g. "1780240469177")
+      const floorPlanSetting = await SystemSetting.findByPk('FLOOR_PLAN_CONFIG');
+      if (floorPlanSetting) {
+        const config = JSON.parse(floorPlanSetting.value);
+        const digits = room.match(/\d+/);
+        const digitStr = digits ? digits[0] : null;
+        
+        const found = config.rooms?.find(r => 
+          r.id === room || 
+          r.name.toLowerCase().includes(room.toLowerCase()) ||
+          (digitStr && r.name.includes(digitStr)) ||
+          (room === 'room301' && r.floor === 3) // Specific mapping fallback for room301 (floor 3)
+        );
+        if (found && mapping[found.id] && Array.isArray(mapping[found.id]) && mapping[found.id].length > 0) {
+          return mapping[found.id].join(', ');
+        }
+      }
+    }
   } catch (e) {
-    console.error('[Gmail] ✗ Error:', e.message);
+    console.error('Error fetching ROOM_EMAIL_SETTINGS:', e.message);
+  }
+  return null;
+}
+
+async function sendEmail(subject, message, type, context = {}) {
+  // Extract room from context or nested context
+  const room = context.room || (context.context && context.context.room) || null;
+  let recipient = await getRoomEmails(room);
+  if (!recipient) {
+    recipient = await getNotifyEmail();
+  }
+  if (!mailer || !recipient) return;
+  const isAlert = type === 'sensor_alert' || type === 'automation_alert';
+
+  // Split recipients by comma
+  const emails = recipient.split(',').map(e => e.trim()).filter(Boolean);
+
+  // Fetch users from auth-service to generate JWT token
+  let users = [];
+  try {
+    const authUrl = process.env.AUTH_SERVICE_URL || 'http://auth-service:3001';
+    const res = await fetch(`${authUrl}/api/users`);
+    if (res.ok) {
+      users = await res.json();
+    }
+  } catch (e) {
+    console.error('[notification-service] Failed to fetch users for JWT generation:', e.message);
+  }
+
+  for (const email of emails) {
+    try {
+      const user = users.find(u => u.email.toLowerCase() === email.toLowerCase());
+      let token = '';
+      if (user) {
+        const payload = {
+          sub: user.id,
+          name: user.name,
+          email: user.email,
+          role: user.Role?.name || 'staff',
+          assigned_room: user.assigned_room
+        };
+        token = jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
+      }
+
+      const dashboardUrl = token
+        ? `https://kienmem.vercel.app/?token=${token}`
+        : 'https://kienmem.vercel.app/';
+
+      await mailer.sendMail({
+        from: `"Smart Office IT03A" <${process.env.GMAIL_USER}>`,
+        to: email,
+        subject,
+        html: `
+          <div style="font-family:sans-serif;max-width:500px;margin:0 auto;padding:20px">
+            <div style="background:${isAlert ? '#fef2f2' : '#eff6ff'};border-left:4px solid ${isAlert ? '#ef4444' : '#3b82f6'};border-radius:8px;padding:20px">
+              <h2 style="margin:0 0 12px;color:${isAlert ? '#dc2626' : '#2563eb'}">
+                ${isAlert ? '⚠️ Cảnh báo Smart Office' : '✅ Smart Office Thông báo'}
+              </h2>
+              <p style="margin:0;color:#374151;font-size:16px">${message}</p>
+              
+              <div style="margin-top:20px;margin-bottom:20px;">
+                <a href="${dashboardUrl}" target="_blank" style="display:inline-block;padding:10px 20px;background-color:${isAlert ? '#ef4444' : '#3b82f6'};color:#ffffff;text-decoration:none;border-radius:6px;font-weight:bold;font-size:14px;">
+                  Truy cập Dashboard Smart Office
+                </a>
+              </div>
+
+              <hr style="margin:16px 0;border:none;border-top:1px solid #e5e7eb">
+              <p style="margin:0;color:#9ca3af;font-size:12px">
+                🕐 ${new Date().toLocaleString('vi-VN')} &nbsp;·&nbsp; Smart Office IT03A-2511
+              </p>
+            </div>
+          </div>
+        `,
+      });
+      console.log(`[Gmail] ✓ Sent to ${email}`);
+    } catch (e) {
+      console.error(`[Gmail] ✗ Error sending to ${email}:`, e.message);
+    }
   }
 }
 
@@ -100,10 +183,10 @@ function auth(req, res, next) {
 async function save(type, message, context = {}, channel = 'in_app') {
   const n = await Notification.create({ type, message, context, channel, status: 'delivered' });
 
-  // Gửi Gmail khi có cảnh báo automation (kịch bản tự động kích hoạt)
-  if (type === 'automation_alert') {
-    const subject = '⚠️ Kịch bản tự động kích hoạt'
-    await sendEmail(subject, message, type)
+  // Gửi Gmail khi có cảnh báo automation (kịch bản tự động kích hoạt) hoặc cảnh báo cảm biến
+  if (type === 'automation_alert' || type === 'sensor_alert') {
+    const subject = type === 'sensor_alert' ? '⚠️ Cảnh báo Cảm biến Smart Office' : '⚠️ Kịch bản tự động kích hoạt';
+    await sendEmail(subject, message, type, context);
   }
 
   console.log(`[notification] ${type}: ${message.substring(0, 80)}`);
@@ -156,6 +239,26 @@ app.put('/api/notifications/settings', auth, async (req, res) => {
     const [setting] = await SystemSetting.findOrCreate({ where: { key: 'NOTIFY_EMAIL' }, defaults: { value: notifyEmail } });
     await setting.update({ value: notifyEmail });
     res.json({ success: true, notifyEmail });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/notifications/settings/rooms
+app.get('/api/notifications/settings/rooms', auth, async (req, res) => {
+  try {
+    const setting = await SystemSetting.findByPk('ROOM_EMAIL_SETTINGS');
+    if (setting) return res.json(JSON.parse(setting.value));
+    res.json({});
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PUT /api/notifications/settings/rooms
+app.put('/api/notifications/settings/rooms', auth, async (req, res) => {
+  try {
+    const config = req.body;
+    const value = JSON.stringify(config);
+    const [setting] = await SystemSetting.findOrCreate({ where: { key: 'ROOM_EMAIL_SETTINGS' }, defaults: { value } });
+    await setting.update({ value });
+    res.json({ success: true, config });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
