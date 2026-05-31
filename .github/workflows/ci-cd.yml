@@ -67,6 +67,8 @@ jobs:
     needs: verify-and-test
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    env:
+      HAS_DOCKER_SECRETS: ${{ secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != '' }}
 
     steps:
       - name: Checkout Code
@@ -79,6 +81,7 @@ jobs:
         uses: docker/setup-buildx-action@v2
 
       - name: Login to Docker Hub
+        if: ${{ env.HAS_DOCKER_SECRETS == 'true' }}
         uses: docker/login-action@v2
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -89,45 +92,45 @@ jobs:
         uses: docker/build-push-action@v4
         with:
           context: ./backend/api-gateway
-          push: true
-          tags: ${{ secrets.DOCKERHUB_USERNAME }}/so-gateway:latest
+          push: ${{ env.HAS_DOCKER_SECRETS == 'true' }}
+          tags: ${{ secrets.DOCKERHUB_USERNAME || 'local' }}/so-gateway:latest
 
       # Build và Push ảnh Docker cho Auth Service
       - name: Build & Push Auth Service Image
         uses: docker/build-push-action@v4
         with:
           context: ./backend/auth-service
-          push: true
-          tags: ${{ secrets.DOCKERHUB_USERNAME }}/so-auth-service:latest
+          push: ${{ env.HAS_DOCKER_SECRETS == 'true' }}
+          tags: ${{ secrets.DOCKERHUB_USERNAME || 'local' }}/so-auth-service:latest
 
       # Build và Push ảnh Docker cho Device Service
       - name: Build & Push Device Service Image
         uses: docker/build-push-action@v4
         with:
           context: ./backend/device-service
-          push: true
-          tags: ${{ secrets.DOCKERHUB_USERNAME }}/so-device-service:latest
+          push: ${{ env.HAS_DOCKER_SECRETS == 'true' }}
+          tags: ${{ secrets.DOCKERHUB_USERNAME || 'local' }}/so-device-service:latest
 
       # Build và Push ảnh Docker cho Automation Service
       - name: Build & Push Automation Service Image
         uses: docker/build-push-action@v4
         with:
           context: ./backend/automation-service
-          push: true
-          tags: ${{ secrets.DOCKERHUB_USERNAME }}/so-automation-service:latest
+          push: ${{ env.HAS_DOCKER_SECRETS == 'true' }}
+          tags: ${{ secrets.DOCKERHUB_USERNAME || 'local' }}/so-automation-service:latest
 
       # Build và Push ảnh Docker cho Monitoring Service
       - name: Build & Push Monitoring Service Image
         uses: docker/build-push-action@v4
         with:
           context: ./backend/monitoring-service
-          push: true
-          tags: ${{ secrets.DOCKERHUB_USERNAME }}/so-monitoring-service:latest
+          push: ${{ env.HAS_DOCKER_SECRETS == 'true' }}
+          tags: ${{ secrets.DOCKERHUB_USERNAME || 'local' }}/so-monitoring-service:latest
 
       # Build và Push ảnh Docker cho Notification Service
       - name: Build & Push Notification Service Image
         uses: docker/build-push-action@v4
         with:
           context: ./backend/notification-service
-          push: true
-          tags: ${{ secrets.DOCKERHUB_USERNAME }}/so-notification-service:latest
+          push: ${{ env.HAS_DOCKER_SECRETS == 'true' }}
+          tags: ${{ secrets.DOCKERHUB_USERNAME || 'local' }}/so-notification-service:latest
