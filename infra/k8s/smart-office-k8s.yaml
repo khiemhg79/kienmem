@@ -1,0 +1,638 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: smart-office
+---
+# -------------------------------------------------------------
+# 1. CONFIGMAPS & SECRETS (Cấu hình chung và Bảo mật)
+# -------------------------------------------------------------
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: smart-office-config
+  namespace: smart-office
+data:
+  MQTT_HOST: "so-mosquitto-service"
+  MQTT_PORT: "1883"
+  RABBITMQ_URL: "amqp://guest:guest@so-rabbitmq-service:5672/"
+  INFLUXDB_URL: "http://so-influxdb-service:8086"
+  INFLUXDB_ORG: "smart-office"
+  INFLUXDB_BUCKET: "sensor_data"
+  AUTH_URL: "http://so-auth-service:3001"
+  DEVICE_URL: "http://so-device-service:3002"
+  AUTOMATION_URL: "http://so-automation-service:3003"
+  MONITORING_URL: "http://so-monitoring-service:3004"
+  NOTIFICATION_URL: "http://so-notification-service:3005"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: smart-office-secrets
+  namespace: smart-office
+type: Opaque
+data:
+  # Base64 encoded values:
+  # dev-secret -> ZGV2LXNlY3JldA==
+  # so-influx-token-2025 -> c28taW5mbHV4LXRva2VuLTIwMjU=
+  # postgresql://postgres:postgres@so-postgres-service:5432/smart_office -> cG9zdGdyZXNxbDovL3Bvc3RncmVzOnBvc3RncmVzQHNvLXBvc3RncmVzLXNlcnZpY2U6NTQzMi9zbWFydF9vZmZpY2U=
+  JWT_SECRET: "ZGV2LXNlY3JldA=="
+  INFLUXDB_TOKEN: "c28taW5mbHV4LXRva2VuLTIwMjU="
+  DATABASE_URL: "cG9zdGdyZXNxbDovL3Bvc3RncmVzOnBvc3RncmVzQHNvLXBvc3RncmVzLXNlcnZpY2U6NTQzMi9zbWFydF9vZmZpY2U="
+---
+# -------------------------------------------------------------
+# 2. PERSISTENT VOLUME CLAIMS (Cấp phát ổ cứng cho Databases)
+# -------------------------------------------------------------
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-pvc
+  namespace: smart-office
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: influxdb-pvc
+  namespace: smart-office
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+---
+# -------------------------------------------------------------
+# 3. DATABASES & BROKERS (PostgreSQL, InfluxDB, Redis, RabbitMQ, Mosquitto)
+# -------------------------------------------------------------
+# PostgreSQL
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: so-postgres
+  namespace: smart-office
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: so-postgres
+  template:
+    metadata:
+      labels:
+        app: so-postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:15-alpine
+          env:
+            - name: POSTGRES_USER
+              value: "postgres"
+            - name: POSTGRES_PASSWORD
+              value: "postgres"
+            - name: POSTGRES_DB
+              value: "smart_office"
+          ports:
+            - containerPort: 5432
+          volumeMounts:
+            - name: postgres-storage
+              mountPath: /var/lib/postgresql/data
+      volumes:
+        - name: postgres-storage
+          persistentVolumeClaim:
+            claimName: postgres-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: so-postgres-service
+  namespace: smart-office
+spec:
+  selector:
+    app: so-postgres
+  ports:
+    - protocol: TCP
+      port: 5432
+      targetPort: 5432
+---
+# InfluxDB
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: so-influxdb
+  namespace: smart-office
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: so-influxdb
+  template:
+    metadata:
+      labels:
+        app: so-influxdb
+    spec:
+      containers:
+        - name: influxdb
+          image: influxdb:2.7-alpine
+          env:
+            - name: DOCKER_INFLUXDB_INIT_MODE
+              value: "setup"
+            - name: DOCKER_INFLUXDB_INIT_USERNAME
+              value: "admin"
+            - name: DOCKER_INFLUXDB_INIT_PASSWORD
+              value: "adminpassword"
+            - name: DOCKER_INFLUXDB_INIT_ORG
+              value: "smart-office"
+            - name: DOCKER_INFLUXDB_INIT_BUCKET
+              value: "sensor_data"
+            - name: DOCKER_INFLUXDB_INIT_ADMIN_TOKEN
+              value: "so-influx-token-2025"
+          ports:
+            - containerPort: 8086
+          volumeMounts:
+            - name: influxdb-storage
+              mountPath: /var/lib/influxdb2
+      volumes:
+        - name: influxdb-storage
+          persistentVolumeClaim:
+            claimName: influxdb-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: so-influxdb-service
+  namespace: smart-office
+spec:
+  selector:
+    app: so-influxdb
+  ports:
+    - protocol: TCP
+      port: 8086
+      targetPort: 8086
+---
+# Redis
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: so-redis
+  namespace: smart-office
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: so-redis
+  template:
+    metadata:
+      labels:
+        app: so-redis
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          ports:
+            - containerPort: 6379
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: so-redis-service
+  namespace: smart-office
+spec:
+  selector:
+    app: so-redis
+  ports:
+    - protocol: TCP
+      port: 6379
+      targetPort: 6379
+---
+# RabbitMQ
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: so-rabbitmq
+  namespace: smart-office
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: so-rabbitmq
+  template:
+    metadata:
+      labels:
+        app: so-rabbitmq
+    spec:
+      containers:
+        - name: rabbitmq
+          image: rabbitmq:3.12-management-alpine
+          ports:
+            - containerPort: 5672
+            - containerPort: 15672
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: so-rabbitmq-service
+  namespace: smart-office
+spec:
+  selector:
+    app: so-rabbitmq
+  ports:
+    - name: amqp
+      protocol: TCP
+      port: 5672
+      targetPort: 5672
+    - name: management
+      protocol: TCP
+      port: 15672
+      targetPort: 15672
+---
+# Mosquitto (MQTT)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: so-mosquitto
+  namespace: smart-office
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: so-mosquitto
+  template:
+    metadata:
+      labels:
+        app: so-mosquitto
+    spec:
+      containers:
+        - name: mosquitto
+          image: eclipse-mosquitto:2
+          ports:
+            - containerPort: 1883
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: so-mosquitto-service
+  namespace: smart-office
+spec:
+  selector:
+    app: so-mosquitto
+  ports:
+    - protocol: TCP
+      port: 1883
+      targetPort: 1883
+---
+# -------------------------------------------------------------
+# 4. MICROSERVICES (Các Dịch Vụ Nghiệp Vụ)
+# -------------------------------------------------------------
+# Auth Service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: so-auth
+  namespace: smart-office
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: so-auth
+  template:
+    metadata:
+      labels:
+        app: so-auth
+    spec:
+      containers:
+        - name: auth-service
+          image: khiemhg79/so-auth-service:latest
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: smart-office-secrets
+                  key: DATABASE_URL
+            - name: REDIS_URL
+              value: "redis://so-redis-service:6379"
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: smart-office-secrets
+                  key: JWT_SECRET
+            - name: PORT
+              value: "3001"
+          ports:
+            - containerPort: 3001
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: so-auth-service
+  namespace: smart-office
+spec:
+  selector:
+    app: so-auth
+  ports:
+    - protocol: TCP
+      port: 3001
+      targetPort: 3001
+---
+# Device Service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: so-device
+  namespace: smart-office
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: so-device
+  template:
+    metadata:
+      labels:
+        app: so-device
+    spec:
+      containers:
+        - name: device-service
+          image: khiemhg79/so-device-service:latest
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: smart-office-secrets
+                  key: DATABASE_URL
+            - name: MQTT_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: smart-office-config
+                  key: MQTT_HOST
+            - name: MQTT_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: smart-office-config
+                  key: MQTT_PORT
+            - name: PORT
+              value: "3002"
+          ports:
+            - containerPort: 3002
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: so-device-service
+  namespace: smart-office
+spec:
+  selector:
+    app: so-device
+  ports:
+    - protocol: TCP
+      port: 3002
+      targetPort: 3002
+---
+# Automation Service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: so-automation
+  namespace: smart-office
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: so-automation
+  template:
+    metadata:
+      labels:
+        app: so-automation
+    spec:
+      containers:
+        - name: automation-service
+          image: khiemhg79/so-automation-service:latest
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: smart-office-secrets
+                  key: DATABASE_URL
+            - name: RABBITMQ_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: smart-office-config
+                  key: RABBITMQ_URL
+            - name: DEVICE_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: smart-office-config
+                  key: DEVICE_URL
+            - name: PORT
+              value: "3003"
+          ports:
+            - containerPort: 3003
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: so-automation-service
+  namespace: smart-office
+spec:
+  selector:
+    app: so-automation
+  ports:
+    - protocol: TCP
+      port: 3003
+      targetPort: 3003
+---
+# Monitoring Service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: so-monitoring
+  namespace: smart-office
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: so-monitoring
+  template:
+    metadata:
+      labels:
+        app: so-monitoring
+    spec:
+      containers:
+        - name: monitoring-service
+          image: khiemhg79/so-monitoring-service:latest
+          env:
+            - name: MQTT_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: smart-office-config
+                  key: MQTT_HOST
+            - name: MQTT_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: smart-office-config
+                  key: MQTT_PORT
+            - name: INFLUXDB_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: smart-office-config
+                  key: INFLUXDB_URL
+            - name: INFLUXDB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: smart-office-secrets
+                  key: INFLUXDB_TOKEN
+            - name: INFLUXDB_ORG
+              valueFrom:
+                configMapKeyRef:
+                  name: smart-office-config
+                  key: INFLUXDB_ORG
+            - name: INFLUXDB_BUCKET
+              valueFrom:
+                configMapKeyRef:
+                  name: smart-office-config
+                  key: INFLUXDB_BUCKET
+            - name: RABBITMQ_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: smart-office-config
+                  key: RABBITMQ_URL
+            - name: PORT
+              value: "3004"
+          ports:
+            - containerPort: 3004
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: so-monitoring-service
+  namespace: smart-office
+spec:
+  selector:
+    app: so-monitoring
+  ports:
+    - protocol: TCP
+      port: 3004
+      targetPort: 3004
+---
+# Notification Service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: so-notification
+  namespace: smart-office
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: so-notification
+  template:
+    metadata:
+      labels:
+        app: so-notification
+    spec:
+      containers:
+        - name: notification-service
+          image: khiemhg79/so-notification-service:latest
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: smart-office-secrets
+                  key: DATABASE_URL
+            - name: RABBITMQ_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: smart-office-config
+                  key: RABBITMQ_URL
+            - name: PORT
+              value: "3005"
+          ports:
+            - containerPort: 3005
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: so-notification-service
+  namespace: smart-office
+spec:
+  selector:
+    app: so-notification
+  ports:
+    - protocol: TCP
+      port: 3005
+      targetPort: 3005
+---
+# -------------------------------------------------------------
+# 5. API GATEWAY (Cổng tiếp nhận và Điều phối)
+# -------------------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: so-gateway
+  namespace: smart-office
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: so-gateway
+  template:
+    metadata:
+      labels:
+        app: so-gateway
+    spec:
+      containers:
+        - name: gateway
+          image: khiemhg79/so-gateway:latest
+          env:
+            - name: PORT
+              value: "3000"
+            - name: AUTH_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: smart-office-config
+                  key: AUTH_URL
+            - name: DEVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: smart-office-config
+                  key: DEVICE_URL
+            - name: AUTOMATION_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: smart-office-config
+                  key: AUTOMATION_URL
+            - name: MONITORING_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: smart-office-config
+                  key: MONITORING_URL
+            - name: NOTIFICATION_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: smart-office-config
+                  key: NOTIFICATION_URL
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: smart-office-secrets
+                  key: JWT_SECRET
+          ports:
+            - containerPort: 3000
+---
+# NodePort Service để truy cập từ ngoài Cluster
+apiVersion: v1
+kind: Service
+metadata:
+  name: so-gateway-service
+  namespace: smart-office
+spec:
+  type: NodePort
+  selector:
+    app: so-gateway
+  ports:
+    - protocol: TCP
+      port: 3000
+      targetPort: 3000
+      nodePort: 32000
