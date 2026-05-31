@@ -9,6 +9,7 @@ on:
     branches:
       - main
       - master
+  workflow_dispatch: # Cho phép kích hoạt thủ công từ giao diện GitHub Web
 
 jobs:
   # -------------------------------------------------------------
