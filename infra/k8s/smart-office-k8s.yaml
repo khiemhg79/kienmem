@@ -372,6 +372,8 @@ spec:
                 configMapKeyRef:
                   name: smart-office-config
                   key: MQTT_PORT
+            - name: REDIS_URL
+              value: "redis://so-redis-service:6379"
             - name: PORT
               value: "3002"
           ports:
@@ -473,6 +475,8 @@ spec:
                 configMapKeyRef:
                   name: smart-office-config
                   key: MQTT_PORT
+            - name: REDIS_URL
+              value: "redis://so-redis-service:6379"
             - name: INFLUXDB_URL
               valueFrom:
                 configMapKeyRef:

@@ -87,6 +87,7 @@ services:
     environment:
       PORT: 3002
       DB_URL: postgresql://souser:sopassword@postgres:5432/so_devices
+      REDIS_URL: redis://:redispassword@redis:6379
       MQTT_HOST: mosquitto
       MQTT_PORT: 1883
       MQTT_USER: souser
@@ -100,6 +101,8 @@ services:
       mosquitto:
         condition: service_started
       rabbitmq:
+        condition: service_started
+      redis:
         condition: service_started
     networks: [so_net]
 
@@ -138,8 +141,9 @@ services:
       INFLUXDB_ORG: smart-office
       INFLUXDB_BUCKET: sensor_data
       RABBITMQ_URL: amqp://souser:sopassword@rabbitmq:5672
+      REDIS_URL: redis://:redispassword@redis:6379
       ALERT_THRESHOLD_TEMP: 29
-    depends_on: [influxdb, mosquitto, rabbitmq]
+    depends_on: [influxdb, mosquitto, rabbitmq, redis]
     networks: [so_net]
 
   notification-service:

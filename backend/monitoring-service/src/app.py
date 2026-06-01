@@ -15,6 +15,7 @@ from influxdb_client import InfluxDBClient, Point
 from influxdb_client.client.write_api import SYNCHRONOUS
 import aio_pika
 from aiohttp import web
+import redis
 
 logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(levelname)s %(message)s')
 log = logging.getLogger('monitoring')
@@ -31,6 +32,15 @@ RABBIT_URL   = os.getenv('RABBITMQ_URL', 'amqp://guest:guest@localhost/')
 ALERT_TEMP   = float(os.getenv('ALERT_THRESHOLD_TEMP', '29'))
 PORT         = int(os.getenv('PORT', '3004'))
 EXCHANGE     = 'smart_office_events'
+
+# ── Redis ───────────────────────────────────────────────────
+REDIS_URL = os.getenv('REDIS_URL', 'redis://localhost:6379')
+try:
+    redis_client = redis.from_url(REDIS_URL, decode_responses=True)
+    log.info("Redis client initialized")
+except Exception as e:
+    log.error(f"Redis initialization failed: {e}")
+    redis_client = None
 
 # ── InfluxDB ────────────────────────────────────────────────
 influx = InfluxDBClient(url=INFLUX_URL, token=INFLUX_TOKEN, org=INFLUX_ORG)
@@ -243,6 +253,19 @@ async def health(req):
 @routes.get('/api/sensors/latest')
 async def latest(req):
     room = req.query.get('room', '')
+    cache_key = f"sensors:latest:{room}"
+    
+    # 1. Thử đọc từ Redis Cache
+    if redis_client:
+        try:
+            cached = redis_client.get(cache_key)
+            if cached:
+                log.info(f"Cache hit for {cache_key}")
+                return web.json_response(json.loads(cached))
+        except Exception as e:
+            log.error(f"Redis get error: {e}")
+            
+    # 2. Cache miss -> query InfluxDB
     room_filter = f'|> filter(fn: (r) => r.room == "{room}")' if room else ''
     flux = f'''
 from(bucket: "{INFLUX_BKT}")
@@ -263,6 +286,14 @@ from(bucket: "{INFLUX_BKT}")
                     'value':       row.get_value(),
                     'time':        str(row.get_time()),
                 })
+                
+        # 3. Lưu vào Redis Cache với TTL=5s
+        if redis_client:
+            try:
+                redis_client.setex(cache_key, 5, json.dumps(results))
+            except Exception as e:
+                log.error(f"Redis setex error: {e}")
+                
         return web.json_response(results)
     except Exception as e:
         return web.json_response({'error': str(e)}, status=500)

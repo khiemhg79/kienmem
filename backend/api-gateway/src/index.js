@@ -30,7 +30,7 @@ const SERVICES = {
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(cors({ origin: '*', methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'], allowedHeaders: ['Content-Type', 'Authorization'] }));
 app.use(morgan('tiny'));
-app.use(rateLimit({ windowMs: 60_000, max: 300 }));
+app.use(rateLimit({ windowMs: 60_000, max: 10000 }));
 
 // Public paths — no JWT required
 const PUBLIC = ['/api/auth/login', '/api/auth/refresh', '/health', '/api/proxy-stream'];

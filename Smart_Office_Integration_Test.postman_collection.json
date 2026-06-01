@@ -1,0 +1,413 @@
+{
+  "info": {
+    "_postman_id": "8fb3f538-4e8c-4f1d-9b28-445af46669be",
+    "name": "Smart Office Complete Integration Flow",
+    "description": "Chuỗi API tích hợp hoàn chỉnh: Đăng nhập -> Nhận token -> Thêm thiết bị -> Cài kịch bản -> Giả lập cảm biến vượt ngưỡng -> Kiểm tra tự động bật điều hòa và nhật ký thông báo.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1. Đăng nhập Admin",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "var jsonData = pm.response.json();",
+              "if (jsonData.accessToken) {",
+              "    pm.collectionVariables.set(\"adminToken\", jsonData.accessToken);",
+              "}",
+              "pm.test(\"Đăng nhập thành công (200)\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"email\": \"admin@smartoffice.vn\",\n    \"password\": \"Admin@123\"\n}"
+        },
+        "url": {
+          "raw": "https://localhost/api/auth/login",
+          "protocol": "https",
+          "host": [
+            "localhost"
+          ],
+          "path": [
+            "api",
+            "auth",
+            "login"
+          ]
+        },
+        "description": "Đăng nhập tài khoản Admin hệ thống để lấy Token xác thực."
+      },
+      "response": []
+    },
+    {
+      "name": "2. Thêm thiết bị Điều hòa (AC)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "var jsonData = pm.response.json();",
+              "pm.collectionVariables.set(\"acDeviceId\", jsonData.id);",
+              "pm.test(\"Tạo Điều hòa thành công (201)\", function () {",
+              "    pm.response.to.have.status(201);",
+              "    pm.expect(jsonData.type).to.eql(\"ac\");",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{adminToken}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"name\": \"Postman AC Test\",\n    \"type\": \"ac\",\n    \"room\": \"room301\",\n    \"floor\": 3\n}"
+        },
+        "url": {
+          "raw": "https://localhost/api/devices",
+          "protocol": "https",
+          "host": [
+            "localhost"
+          ],
+          "path": [
+            "api",
+            "devices"
+          ]
+        },
+        "description": "Admin thực hiện thêm mới thiết bị Điều hòa vào phòng room301."
+      },
+      "response": []
+    },
+    {
+      "name": "3. Thêm thiết bị Cảm biến (Sensor)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "var jsonData = pm.response.json();",
+              "pm.collectionVariables.set(\"sensorDeviceId\", jsonData.id);",
+              "pm.test(\"Tạo Cảm biến thành công (201)\", function () {",
+              "    pm.response.to.have.status(201);",
+              "    pm.expect(jsonData.type).to.eql(\"sensor\");",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{adminToken}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"name\": \"Postman Temperature Sensor\",\n    \"type\": \"sensor\",\n    \"room\": \"room301\",\n    \"floor\": 3\n}"
+        },
+        "url": {
+          "raw": "https://localhost/api/devices",
+          "protocol": "https",
+          "host": [
+            "localhost"
+          ],
+          "path": [
+            "api",
+            "devices"
+          ]
+        },
+        "description": "Admin thêm mới thiết bị Cảm biến nhiệt độ vào phòng room301."
+      },
+      "response": []
+    },
+    {
+      "name": "4. Đăng ký Kịch bản tự động hóa",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "var jsonData = pm.response.json();",
+              "pm.collectionVariables.set(\"ruleId\", jsonData.id);",
+              "pm.test(\"Đăng ký kịch bản thành công (201)\", function () {",
+              "    pm.response.to.have.status(201);",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{adminToken}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"name\": \"Postman Integration Rule\",\n    \"description\": \"Tự động bật điều hòa khi nhiệt độ Postman Sensor vượt 29°C\",\n    \"trigger_type\": \"sensor\",\n    \"condition\": {\n        \"sensor_type\": \"temperature\",\n        \"operator\": \">\",\n        \"threshold\": 29\n    },\n    \"action\": {\n        \"device_ids\": [\"{{acDeviceId}}\"],\n        \"command\": \"ON\"\n    },\n    \"notify\": true,\n    \"notify_message\": \"Cảnh báo Postman: Phát hiện nhiệt độ tích hợp vượt ngưỡng! Đã tự động BẬT điều hòa.\",\n    \"is_active\": true\n}"
+        },
+        "url": {
+          "raw": "https://localhost/api/automations",
+          "protocol": "https",
+          "host": [
+            "localhost"
+          ],
+          "path": [
+            "api",
+            "automations"
+          ]
+        },
+        "description": "Tạo kịch bản tự động bật Điều hòa vừa thêm khi cảm biến nhiệt độ báo trị số > 29°C."
+      },
+      "response": []
+    },
+    {
+      "name": "5. Giả lập cảm biến vượt ngưỡng",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Cấu hình giả lập thành công (200)\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{adminToken}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"room301\": {\n        \"active\": true,\n        \"base_temp\": 32.5,\n        \"amplitude\": 0\n    }\n}"
+        },
+        "url": {
+          "raw": "https://localhost/api/sensors/simulation",
+          "protocol": "https",
+          "host": [
+            "localhost"
+          ],
+          "path": [
+            "api",
+            "sensors",
+            "simulation"
+          ]
+        },
+        "description": "Thay đổi nhiệt độ giả lập của phòng room301 thành 32.5°C thông qua API Giả lập của monitoring-service."
+      },
+      "response": []
+    },
+    {
+      "name": "6. Kiểm tra trạng thái Điều hòa",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": [
+              "// Chờ 6 giây để vòng lặp giả lập và hệ thống xử lý",
+              "var delayInMillis = 6000;",
+              "var start = new Date().getTime();",
+              "while ((new Date().getTime() - start) < delayInMillis);"
+            ],
+            "type": "text/javascript"
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "var jsonData = pm.response.json();",
+              "var acDeviceId = pm.collectionVariables.get(\"acDeviceId\");",
+              "var targetAc = jsonData.find(function(d) { return d.id === acDeviceId; });",
+              "",
+              "pm.test(\"Điều hòa đã tự động chuyển sang BẬT (status = true)\", function () {",
+              "    pm.expect(targetAc).to.not.be.undefined;",
+              "    pm.expect(targetAc.status).to.be.true;",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{adminToken}}"
+          }
+        ],
+        "url": {
+          "raw": "https://localhost/api/devices",
+          "protocol": "https",
+          "host": [
+            "localhost"
+          ],
+          "path": [
+            "api",
+            "devices"
+          ]
+        },
+        "description": "Lấy danh sách thiết bị để kiểm tra trạng thái điều hòa đã được chuyển sang BẬT chưa."
+      },
+      "response": []
+    },
+    {
+      "name": "7. Kiểm tra Lịch sử thực thi (Exec Logs)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "var jsonData = pm.response.json();",
+              "var ruleId = pm.collectionVariables.get(\"ruleId\");",
+              "console.log(\"Postman ruleId:\", ruleId);",
+              "var targetLog = jsonData.find(function(l) {",
+              "    return (ruleId && l.rule_id === ruleId) || (l.rule && l.rule.name === \"Postman Integration Rule\");",
+              "});",
+              "",
+              "pm.test(\"Lịch sử thực thi ghi nhận thành công (success)\", function () {",
+              "    pm.expect(targetLog).to.not.be.undefined;",
+              "    pm.expect(targetLog.result).to.eql(\"success\");",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{adminToken}}"
+          }
+        ],
+        "url": {
+          "raw": "https://localhost/api/automations/exec-logs",
+          "protocol": "https",
+          "host": [
+            "localhost"
+          ],
+          "path": [
+            "api",
+            "automations",
+            "exec-logs"
+          ]
+        },
+        "description": "Truy xuất danh sách log thực thi kịch bản từ database thông qua automation-service."
+      },
+      "response": []
+    },
+    {
+      "name": "8. Kiểm tra Nhật ký thông báo (Notifications)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "var jsonData = pm.response.json();",
+              "var found = jsonData.some(function(n) { ",
+              "    return n.message.includes(\"Postman Integration Rule\") || n.message.includes(\"Cảnh báo Postman\");",
+              "});",
+              "",
+              "pm.test(\"Hệ thống đã tạo bản ghi thông báo cảnh báo\", function () {",
+              "    pm.expect(found).to.be.true;",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{adminToken}}"
+          }
+        ],
+        "url": {
+          "raw": "https://localhost/api/notifications",
+          "protocol": "https",
+          "host": [
+            "localhost"
+          ],
+          "path": [
+            "api",
+            "notifications"
+          ]
+        },
+        "description": "Lấy danh sách nhật ký thông báo để chứng minh sự kiện cảnh báo đã được lưu trữ."
+      },
+      "response": []
+    }
+  ],
+  "variable": [
+    {
+      "key": "adminToken",
+      "value": ""
+    },
+    {
+      "key": "acDeviceId",
+      "value": ""
+    },
+    {
+      "key": "sensorDeviceId",
+      "value": ""
+    },
+    {
+      "key": "ruleId",
+      "value": ""
+    }
+  ]
+}
