@@ -5,7 +5,7 @@ const helmet = require('helmet');
 const morgan = require('morgan');
 const jwt = require('jsonwebtoken');
 const amqp = require('amqplib');
-const nodemailer = require('nodemailer');
+const { Resend } = require('resend');
 const { Sequelize, DataTypes } = require('sequelize');
 
 const app = express();
@@ -15,17 +15,8 @@ const EXCHANGE = 'smart_office_events';
 
 app.use(helmet()); app.use(cors()); app.use(morgan('tiny')); app.use(express.json());
 
-// ── Gmail transporter ───────────────────────────────────────
-const mailer = process.env.GMAIL_USER ? nodemailer.createTransport({
-  host: 'smtp.gmail.com',
-  port: 587,
-  secure: true,
-  auth: {
-    user: process.env.GMAIL_USER,
-    pass: process.env.GMAIL_APP_PASSWORD,
-  },
-  tls: { rejectUnauthorized: false }
-}) : null
+// ── Resend client ───────────────────────────────────────────
+const resendClient = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null
 
 // ── Database ────────────────────────────────────────────────
 const sequelize = new Sequelize(process.env.DB_URL || 'postgresql://souser:sopassword@localhost:5432/so_notifications', {
@@ -63,24 +54,19 @@ async function getRoomEmails(room) {
     const setting = await SystemSetting.findByPk('ROOM_EMAIL_SETTINGS');
     if (setting) {
       const mapping = JSON.parse(setting.value);
-      
-      // 1. Direct match
       if (mapping[room] && Array.isArray(mapping[room]) && mapping[room].length > 0) {
         return mapping[room].join(', ');
       }
-      
-      // 2. Resolve room name/number (e.g. "room301") to configured room ID (e.g. "1780240469177")
       const floorPlanSetting = await SystemSetting.findByPk('FLOOR_PLAN_CONFIG');
       if (floorPlanSetting) {
         const config = JSON.parse(floorPlanSetting.value);
         const digits = room.match(/\d+/);
         const digitStr = digits ? digits[0] : null;
-        
-        const found = config.rooms?.find(r => 
-          r.id === room || 
+        const found = config.rooms?.find(r =>
+          r.id === room ||
           r.name.toLowerCase().includes(room.toLowerCase()) ||
           (digitStr && r.name.includes(digitStr)) ||
-          (room === 'room301' && r.floor === 3) // Specific mapping fallback for room301 (floor 3)
+          (room === 'room301' && r.floor === 3)
         );
         if (found && mapping[found.id] && Array.isArray(mapping[found.id]) && mapping[found.id].length > 0) {
           return mapping[found.id].join(', ');
@@ -94,26 +80,21 @@ async function getRoomEmails(room) {
 }
 
 async function sendEmail(subject, message, type, context = {}) {
-  // Extract room from context or nested context
+  if (!resendClient) return
   const room = context.room || (context.context && context.context.room) || null;
   let recipient = await getRoomEmails(room);
-  if (!recipient) {
-    recipient = await getNotifyEmail();
-  }
-  if (!mailer || !recipient) return;
-  const isAlert = type === 'sensor_alert' || type === 'automation_alert';
+  if (!recipient) recipient = await getNotifyEmail();
+  if (!recipient) return;
 
-  // Split recipients by comma
+  const isAlert = type === 'sensor_alert' || type === 'automation_alert';
   const emails = recipient.split(',').map(e => e.trim()).filter(Boolean);
 
-  // Fetch users from auth-service to generate JWT token
+  // Fetch users for JWT token
   let users = [];
   try {
     const authUrl = process.env.AUTH_SERVICE_URL || 'http://auth-service:3001';
     const res = await fetch(`${authUrl}/api/users`);
-    if (res.ok) {
-      users = await res.json();
-    }
+    if (res.ok) users = await res.json();
   } catch (e) {
     console.error('[notification-service] Failed to fetch users for JWT generation:', e.message);
   }
@@ -123,22 +104,17 @@ async function sendEmail(subject, message, type, context = {}) {
       const user = users.find(u => u.email.toLowerCase() === email.toLowerCase());
       let token = '';
       if (user) {
-        const payload = {
-          sub: user.id,
-          name: user.name,
-          email: user.email,
-          role: user.Role?.name || 'staff',
-          assigned_room: user.assigned_room
-        };
-        token = jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
+        token = jwt.sign({
+          sub: user.id, name: user.name, email: user.email,
+          role: user.Role?.name || 'staff', assigned_room: user.assigned_room
+        }, JWT_SECRET, { expiresIn: '7d' });
       }
-
       const dashboardUrl = token
         ? `https://kienmem.vercel.app/?token=${token}`
         : 'https://kienmem.vercel.app/';
 
-      await mailer.sendMail({
-        from: `"Smart Office IT03A" <${process.env.GMAIL_USER}>`,
+      await resendClient.emails.send({
+        from: 'Smart Office <onboarding@resend.dev>',
         to: email,
         subject,
         html: `
@@ -148,24 +124,22 @@ async function sendEmail(subject, message, type, context = {}) {
                 ${isAlert ? '⚠️ Cảnh báo Smart Office' : '✅ Smart Office Thông báo'}
               </h2>
               <p style="margin:0;color:#374151;font-size:16px">${message}</p>
-              
               <div style="margin-top:20px;margin-bottom:20px;">
                 <a href="${dashboardUrl}" target="_blank" style="display:inline-block;padding:10px 20px;background-color:${isAlert ? '#ef4444' : '#3b82f6'};color:#ffffff;text-decoration:none;border-radius:6px;font-weight:bold;font-size:14px;">
                   Truy cập Dashboard Smart Office
                 </a>
               </div>
-
               <hr style="margin:16px 0;border:none;border-top:1px solid #e5e7eb">
               <p style="margin:0;color:#9ca3af;font-size:12px">
-                🕐 ${new Date().toLocaleString('vi-VN')} &nbsp;·&nbsp; Smart Office IT03A-2511
+                🕐 ${new Date().toLocaleString('vi-VN')} · Smart Office IT03A-2511
               </p>
             </div>
           </div>
-        `,
+        `
       });
-      console.log(`[Gmail] ✓ Sent to ${email}`);
+      console.log(`[Resend] ✓ Sent to ${email}`);
     } catch (e) {
-      console.error(`[Gmail] ✗ Error sending to ${email}:`, e.message);
+      console.error(`[Resend] ✗ Error sending to ${email}:`, e.message);
     }
   }
 }
@@ -182,13 +156,12 @@ function auth(req, res, next) {
 // ── Notification logic ──────────────────────────────────────
 async function save(type, message, context = {}, channel = 'in_app') {
   const n = await Notification.create({ type, message, context, channel, status: 'delivered' });
-
-  // Gửi Gmail khi có cảnh báo automation (kịch bản tự động kích hoạt) hoặc cảnh báo cảm biến
   if (type === 'automation_alert' || type === 'sensor_alert') {
-    const subject = type === 'sensor_alert' ? '⚠️ Cảnh báo Cảm biến Smart Office' : '⚠️ Kịch bản tự động kích hoạt';
+    const subject = type === 'sensor_alert'
+      ? '⚠️ Cảnh báo Cảm biến Smart Office'
+      : '⚠️ Kịch bản tự động kích hoạt';
     await sendEmail(subject, message, type, context);
   }
-
   console.log(`[notification] ${type}: ${message.substring(0, 80)}`);
   return n;
 }
@@ -223,7 +196,6 @@ app.post('/api/notifications/read-all', auth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// GET /api/notifications/settings
 app.get('/api/notifications/settings', auth, async (req, res) => {
   try {
     const notifyEmail = await getNotifyEmail();
@@ -231,7 +203,6 @@ app.get('/api/notifications/settings', auth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// PUT /api/notifications/settings
 app.put('/api/notifications/settings', auth, async (req, res) => {
   try {
     const { notifyEmail } = req.body;
@@ -242,7 +213,6 @@ app.put('/api/notifications/settings', auth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// GET /api/notifications/settings/rooms
 app.get('/api/notifications/settings/rooms', auth, async (req, res) => {
   try {
     const setting = await SystemSetting.findByPk('ROOM_EMAIL_SETTINGS');
@@ -251,7 +221,6 @@ app.get('/api/notifications/settings/rooms', auth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// PUT /api/notifications/settings/rooms
 app.put('/api/notifications/settings/rooms', auth, async (req, res) => {
   try {
     const config = req.body;
@@ -262,16 +231,14 @@ app.put('/api/notifications/settings/rooms', auth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// GET /api/notifications/settings/floor-plan
 app.get('/api/notifications/settings/floor-plan', auth, async (req, res) => {
   try {
     const setting = await SystemSetting.findByPk('FLOOR_PLAN_CONFIG');
     if (setting) return res.json(JSON.parse(setting.value));
-    res.json({ width: 680, height: 680, rooms: [] }); // Default config
+    res.json({ width: 680, height: 680, rooms: [] });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// PUT /api/notifications/settings/floor-plan
 app.put('/api/notifications/settings/floor-plan', auth, async (req, res) => {
   try {
     const config = req.body;
