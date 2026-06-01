@@ -22,14 +22,19 @@ export default function Layout() {
   const user = JSON.parse(localStorage.getItem('user') || '{}')
 
   useEffect(() => {
-  const fetchCount = () => {
-    if (!localStorage.getItem('accessToken')) return
-    getUnreadCount().then(r => setCount(r.data.count)).catch(() => {})
-  }
-  fetchCount()
-  const t = setInterval(fetchCount, 10000)
-  return () => clearInterval(t)
-}, [])
+    const fetchCount = () => {
+      if (!localStorage.getItem('accessToken')) return
+      getUnreadCount().then(r => setCount(r.data.count)).catch(() => {})
+    }
+    fetchCount()
+    
+    window.addEventListener('notificationsRead', fetchCount)
+    const t = setInterval(fetchCount, 10000)
+    return () => {
+      clearInterval(t)
+      window.removeEventListener('notificationsRead', fetchCount)
+    }
+  }, [])
 
   async function handleLogout() {
     await logout().catch(() => {})

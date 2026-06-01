@@ -16,8 +16,18 @@ const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret';
 app.use(helmet()); app.use(cors()); app.use(morgan('tiny')); app.use(express.json());
 
 // Redis
-const redis = createClient({ url: process.env.REDIS_URL || 'redis://localhost:6379' });
-redis.connect().catch(e => console.error('Redis:', e.message));
+const redis = createClient({
+  url: process.env.REDIS_URL || 'redis://localhost:6379',
+  socket: {
+    connectTimeout: 3000,
+    reconnectStrategy: (retries) => {
+      if (retries > 3) return new Error('Redis connection failed');
+      return 2000;
+    }
+  },
+  disableOfflineQueue: true
+});
+redis.connect().catch(e => console.error('Redis connection error:', e.message));
 
 const loginLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 100 });
 
@@ -71,7 +81,7 @@ app.post('/api/auth/verify', async (req, res) => {
   try {
     const { token } = req.body;
     const payload = jwt.verify(token, JWT_SECRET);
-    const bl = await redis.get(`blacklist:${payload.jti}`).catch(() => null);
+    const bl = redis.isOpen ? await redis.get(`blacklist:${payload.jti}`).catch(() => null) : null;
     if (bl) return res.status(401).json({ valid: false, error: 'Token revoked' });
     res.json({ valid: true, payload });
   } catch (e) { res.status(401).json({ valid: false, error: e.message }); }
@@ -81,7 +91,7 @@ app.post('/api/auth/verify', async (req, res) => {
 app.post('/api/auth/logout', async (req, res) => {
   try {
     const token = req.headers.authorization?.slice(7);
-    if (token) { const p = jwt.decode(token); if (p?.jti) await redis.setEx(`blacklist:${p.jti}`, 900, '1').catch(() => { }); }
+    if (token) { const p = jwt.decode(token); if (p?.jti && redis.isOpen) await redis.setEx(`blacklist:${p.jti}`, 900, '1').catch(() => { }); }
     res.json({ message: 'Đăng xuất thành công' });
   } catch (e) { res.json({ message: 'OK' }); }
 });

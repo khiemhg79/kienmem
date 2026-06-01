@@ -16,21 +16,39 @@ export default function Notifications() {
 
   const fetch = async () => {
     setLoading(true)
-    try { const r = await getNotifications(); setNotifs(r.data) }
-    catch (e) { console.error(e) }
-    finally { setLoading(false) }
+    try {
+      const r = await getNotifications();
+      setNotifs(r.data);
+      // Auto-read unread notifications on load
+      const hasUnread = r.data.some(n => !n.read_at);
+      if (hasUnread) {
+        await markAllRead().catch(() => {});
+        setNotifs(prev => prev.map(n => ({ ...n, read_at: n.read_at || new Date() })));
+        window.dispatchEvent(new Event('notificationsRead'));
+      }
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setLoading(false)
+    }
   }
 
-  useEffect(() => { fetch(); const t = setInterval(fetch, 8000); return () => clearInterval(t) }, [])
+  useEffect(() => {
+    fetch();
+    const t = setInterval(fetch, 8000);
+    return () => clearInterval(t)
+  }, [])
 
   async function handleRead(id) {
     await markRead(id).catch(() => {})
     setNotifs(prev => prev.map(n => n.id === id ? { ...n, read_at: new Date() } : n))
+    window.dispatchEvent(new Event('notificationsRead'))
   }
 
   async function handleReadAll() {
     await markAllRead().catch(() => {})
     setNotifs(prev => prev.map(n => ({ ...n, read_at: n.read_at || new Date() })))
+    window.dispatchEvent(new Event('notificationsRead'))
   }
 
   const unread   = notifs.filter(n => !n.read_at).length

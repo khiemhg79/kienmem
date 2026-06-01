@@ -17,7 +17,20 @@ const EXCHANGE = 'smart_office_events';
 app.use(helmet()); app.use(cors()); app.use(morgan('tiny')); app.use(express.json());
 
 // ── Redis Cache ─────────────────────────────────────────────
-const redis = createClient({ url: process.env.REDIS_URL || 'redis://localhost:6379' });
+const redis = createClient({
+  url: process.env.REDIS_URL || 'redis://localhost:6379',
+  socket: {
+    connectTimeout: 3000,
+    reconnectStrategy: (retries) => {
+      if (retries > 3) {
+        console.warn('[device-service] Redis reconnect attempts exceeded. Stop retrying.');
+        return new Error('Redis connection failed');
+      }
+      return 2000;
+    }
+  },
+  disableOfflineQueue: true
+});
 redis.connect().catch(e => console.error('[device-service] Redis Connection Error:', e.message));
 
 // ── Database ────────────────────────────────────────────────
@@ -191,10 +204,12 @@ app.get('/api/devices', auth, rbacCheck('read'), async (req, res) => {
     // 1. Thử lấy danh sách thiết bị đầy đủ từ Redis Cache
     let allDevices;
     try {
-      const cached = await redis.get('devices:all');
-      if (cached) {
-        allDevices = JSON.parse(cached);
-        console.log('[device-service] Cache hit for devices:all');
+      if (redis.isOpen) {
+        const cached = await redis.get('devices:all');
+        if (cached) {
+          allDevices = JSON.parse(cached);
+          console.log('[device-service] Cache hit for devices:all');
+        }
       }
     } catch (err) {
       console.error('[device-service] Redis cache read error:', err.message);
@@ -205,7 +220,9 @@ app.get('/api/devices', auth, rbacCheck('read'), async (req, res) => {
       console.log('[device-service] Cache miss for devices:all, fetching from database');
       allDevices = await Device.findAll({ include: [DeviceGroup], order: [['floor', 'ASC'], ['room', 'ASC']] });
       try {
-        await redis.setEx('devices:all', 30, JSON.stringify(allDevices));
+        if (redis.isOpen) {
+          await redis.setEx('devices:all', 30, JSON.stringify(allDevices));
+        }
       } catch (err) {
         console.error('[device-service] Redis cache write error:', err.message);
       }
@@ -248,7 +265,9 @@ app.post('/api/devices', auth, rbacCheck('write'), async (req, res) => {
   try {
     const d = await Device.create(req.body);
     publishEvent('device.created', { device_id: d.id, name: d.name });
-    await redis.del('devices:all').catch(() => {});
+    if (redis.isOpen) {
+      await redis.del('devices:all').catch(() => {});
+    }
     res.status(201).json(d);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -260,7 +279,9 @@ app.put('/api/devices/:id', auth, rbacCheck('write'), async (req, res) => {
     if (!d) return res.status(404).json({ error: 'Không tìm thấy thiết bị' });
     await d.update(req.body);
     publishEvent('device.updated', { device_id: d.id });
-    await redis.del('devices:all').catch(() => {});
+    if (redis.isOpen) {
+      await redis.del('devices:all').catch(() => {});
+    }
     res.json(d);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -272,7 +293,9 @@ app.delete('/api/devices/:id', auth, rbacCheck('delete'), async (req, res) => {
     if (!d) return res.status(404).json({ error: 'Không tìm thấy thiết bị' });
     await d.destroy();
     publishEvent('device.deleted', { device_id: req.params.id });
-    await redis.del('devices:all').catch(() => {});
+    if (redis.isOpen) {
+      await redis.del('devices:all').catch(() => {});
+    }
     res.json({ message: 'Đã xóa thiết bị' });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -290,7 +313,9 @@ app.post('/api/devices/:id/control', auth, rbacCheck('control'), async (req, res
     if (command === 'OFF') await d.update({ status: false, last_seen: new Date() });
     await CommandLog.create({ device_id: d.id, user_id: req.user?.sub, command, payload: params, source: req.headers['x-internal-service'] ? 'automation' : 'user' });
     publishEvent('device.controlled', { device_id: d.id, command, source: 'device-service' });
-    await redis.del('devices:all').catch(() => {});
+    if (redis.isOpen) {
+      await redis.del('devices:all').catch(() => {});
+    }
     res.json({ success: true, device_id: d.id, command, status: d.status });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
